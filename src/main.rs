@@ -1,36 +1,26 @@
-use std::error::Error;
-use std::fs::{self, OpenOptions, File};
+use anyhow::{Context, Result};
+use std::fs::{File};
+use std::path::Path;
 use std::io::{BufReader, BufWriter, Read, Write};
-use serde_json::{Value};
 use std::env;
 
-/* "Result<(), Box<dyn Error>>" may return an error implementing
-   Error. "dyn" ensures it is done at runtime. */
-fn main() -> Result<(), Box<dyn Error>> {
+fn main() -> Result<()> {
 
-    let args: Vec<String> = env::args().collect();
-    let file: fs::File = OpenOptions::new()
-        .read(true)
-        .write(true)
-        .create(true)
-        .open("settings.json")?;
-    let reader = BufReader::new(&file);
-    let writer = BufWriter::new(&file);
-    
-    let user_data: Value;
+    let file_path = Path::new("settings.json");
+    let file: File;
 
-    match fs::exists("settings.json") {
-        Ok(true) => user_data = serde_json::from_reader(reader)?,
-        Ok(false) => todo!("Make an initializer helper function"),
-        Err(e) => return Err(Box::new(e)),
+    // Check if settings.json exists and create it if no
+    if Path::try_exists(file_path)? {
+        file = File::open(file_path)?;
+    } else {
+        file = File::create_new(file_path)?;
     }
-    dbg!(&user_data);
-    println!("{}", user_data["name"]);
+    let reader = BufReader::new(&file);
+    let mut str_json: String = serde_json::from_reader(reader)
+        .context("Failed to read json")?;
+    if file.metadata()?.len() == 0 {
+        str_json.push_str("{}");
+    }
+
     Ok(())
-}
-
-fn find_shell_path<'a>(s: &'a str) {
-
-
-
 }
