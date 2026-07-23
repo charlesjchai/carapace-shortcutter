@@ -5,13 +5,20 @@ use std::fs::{File};
 use std::path::Path;
 use std::io::{BufReader, BufWriter, Read, Write};
 
-// Formats an error message with its file, line and column
+#[cfg(not(target_family = "unix"))]
+compile_error!("WHAT THE HECK ARE YOU DOING TRYING TO COMPILE THIS ON A NON-UNIX SYSTEM???");
+
+/// Formats an error message with its file, line and column
 macro_rules! area_err {
     ($a:expr) => {
         format!("\"{}\" at {}:{}:{}", $a, file!(), line!(), column!())
     };
 }
 fn main() -> Result<()> {
+    // Checks if system is not Unix
+    if cfg!(not(target_family = "unix")) {
+        panic!("WHAT THE HECK ARE YOU DOING TRYING TO RUN THIS ON A NON-UNIX SYSTEM???");
+    }
 
     let file_path = Path::new("settings.json");
     let file: File;
