@@ -28,7 +28,6 @@ fn main() -> Result<()> {
             .context(area_err!("File could not be created"))?;
     }
     let reader = BufReader::new(&file);
-    let rc_path: &Path;
 
     // Either creates a mutable copy of settings.json or initializes an empty one
     let mut settings: Map<String, Value> = if file.metadata()?.len() == 0 {
@@ -43,6 +42,7 @@ fn main() -> Result<()> {
     };
     
     // Asks for the shell's rc file if it isn't found
+    let rc_path: &Path;
     if settings.contains_key("shell_rc_file") {
         rc_path = Path::new(&settings["shell_rc_file"].to_string());
     } else {
