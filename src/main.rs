@@ -71,7 +71,7 @@ fn main() -> Result<()> {
     }
     dbg!(&settings);
 
-
+    
     
     let file_temp = File::create(file_path)?;
     let mut writer = BufWriter::new(file_temp);
