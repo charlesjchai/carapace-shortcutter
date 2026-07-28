@@ -3,18 +3,19 @@ use clap::Parser;
 use serde_json::Value;
 use std::fs::File;
 use std::io::{self, BufReader, BufWriter, Write};
-use std::path::Path;
+use std::path::{PathBuf};
 
 #[cfg(not(target_family = "unix"))]
 compile_error!("Support for non-unix systems is not yet supported.");
 
 fn main() -> Result<()> {
-    if cfg!(not(target_family = "unix")) {
-        panic!("Support for non-unix systems is not yet supported.");
-    }
+    assert!(
+        cfg!(target_family = "unix"),
+        "Support for non-unix systems is not yet supported."
+    );
 
-    let file_path: &Path = Path::new("settings.json");
-    // Open the file with read and write power
+    let file_path = PathBuf::from("settings.json");
+    // Open the file and create it if it doesn't exist
     let file = File::options()
         .read(true)
         .write(true)
@@ -48,9 +49,14 @@ fn main() -> Result<()> {
     };*/
 
     // Asks for the shell's rc file if it isn't found
-    let rc_path: &Path;
+    let rc_path: PathBuf;
+    let mut buf = String::new();
     if settings.contains_key("shell_rc_file") {
-        rc_path = Path::new(&settings["shell_rc_file"].to_string());
+        rc_path = PathBuf::from(
+            settings["shell_rc_file"]
+                .as_str()
+                .context("Error reading JSON")?,
+        );
     } else {
         print!(
             "The shell's rc file was not specified. \n\
@@ -59,22 +65,26 @@ fn main() -> Result<()> {
         Shell rc file path: "
         );
         io::stdout().flush()?;
-        let mut rc_temp = String::new();
         io::stdin()
-            .read_line(&mut rc_temp)
+            .read_line(&mut buf)
             .context(area_err!("Failed to read rc file"))?;
-        rc_path = Path::new(&rc_temp);
+        rc_path = PathBuf::from(&buf);
         settings.insert(
             "shell_rc_file".to_string(),
-            Value::String(rc_temp.trim().to_string()),
+            Value::String(buf.trim().to_string()),
         );
     }
     dbg!(&settings);
 
-    
-    
-    let file_temp = File::create(file_path)?;
-    let mut writer = BufWriter::new(file_temp);
+    let shellrc_file = File::options()
+        .read(true)
+        .write(true)
+        .append(true)
+        .open(rc_path);
+
+    // Truncate the file and quit
+    let file = File::create(file_path)?;
+    let mut writer = BufWriter::new(file);
     quit(&mut writer, &json_val);
 }
 
