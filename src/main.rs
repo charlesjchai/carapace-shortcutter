@@ -4,8 +4,8 @@ use serde_json::Value;
 use std::fs::{self, File};
 use std::io::{self, BufReader, BufWriter, Write};
 use std::path::{self, Path, PathBuf};
-
-#[cfg(not(target_family = "unix"))]
+use std::os::unix::fs::OpenOptionsExt;
+#[cfg(not(unix))]
 compile_error!("Non-Unix systems are not yet supported.");
 
 fn main() -> Result<()> {
@@ -17,12 +17,14 @@ fn main() -> Result<()> {
         .create(true)
         .open(json_path.to_str().unwrap())
         .context(area_err!("Could not open settings.json"))?;
-    let aliases_file = File::options()
+    let mut aliases_file = File::options()
         .read(true)
-        .append(true)
+        .write(true)
         .create(true)
-        .open(json_path.to_str().unwrap())
+        .mode(0o755) 
+        .open(aliases_path.to_str().unwrap())
         .context(area_err!("Could not open `aliases` file"))?;
+    writeln!(aliases_file, "ls")?;
     let reader = BufReader::new(&json_file);
 
     // Either creates a mutable copy of settings.json or initializes an empty one
@@ -97,7 +99,6 @@ fn main() -> Result<()> {
         .open(&shellrc_path)
         .context(area_err!("Shell rc file could not be opened"))?;
     let shellrc_contents = fs::read_to_string(&shellrc_path).unwrap();
-    dbg!(&shellrc_contents);
     if !shellrc_contents.contains(aliases_path_str) {
         println!("`aliases` file not found in shell rc, inserting...");
         writeln!(
