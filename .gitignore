@@ -6,4 +6,5 @@ debug
 
 .DS_Store
 
-settings.json
+# resources used by the program
+resources/*
