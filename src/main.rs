@@ -1,10 +1,13 @@
+mod args;
+
 use anyhow::{Context, Result};
+use args::CarapaceArgs;
 use clap::Parser;
 use serde_json::Value;
 use std::fs::{self, File};
 use std::io::{self, BufReader, BufWriter, Write};
-use std::path::{self, Path, PathBuf};
 use std::os::unix::fs::OpenOptionsExt;
+use std::path::{self, Path, PathBuf};
 #[cfg(not(unix))]
 compile_error!("Non-Unix systems are not yet supported.");
 
@@ -21,10 +24,10 @@ fn main() -> Result<()> {
         .read(true)
         .write(true)
         .create(true)
-        .mode(0o755) 
+        .mode(0o755)
         .open(aliases_path.to_str().unwrap())
         .context(area_err!("Could not open `aliases` file"))?;
-    writeln!(aliases_file, "ls")?;
+    // writeln!(aliases_file, "ls")?;
     let reader = BufReader::new(&json_file);
 
     // Either creates a mutable copy of settings.json or initializes an empty one
@@ -109,6 +112,8 @@ fn main() -> Result<()> {
         dbg!(path::absolute(&aliases_path)?.to_str().unwrap());
     }
 
+    let args = CarapaceArgs::parse();
+     
     quit(&json_path, &json_val);
 }
 
@@ -121,17 +126,9 @@ macro_rules! area_err {
 }
 pub(crate) use area_err;
 
-/// A shortcut tool that makes shortcuts of shell commands
-#[derive(Parser)]
-#[command(version, about)]
-struct Args {
-    /// Add a shortcut
-    add: String,
-}
-
-fn quit(json_path: &Path, value: &Value) -> ! {
+fn quit(path: &Path, value: &Value) -> ! {
     // Truncate the file and quit
-    let file = File::create(json_path).unwrap();
+    let file = File::create(path).unwrap();
     let mut writer = BufWriter::new(file);
     serde_json::to_writer_pretty(&mut writer, value).expect("Could not read Value");
     writer.flush().unwrap();
