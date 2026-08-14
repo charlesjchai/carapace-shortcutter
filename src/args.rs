@@ -1,4 +1,4 @@
-use clap::{Args, Parser, Subcommand};
+use clap::{Parser, Subcommand};
 
 /// A shortcut tool that makes shortcuts of shell commands
 #[derive(Debug, Parser)]
