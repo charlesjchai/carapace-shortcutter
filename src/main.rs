@@ -9,7 +9,6 @@ use std::fs::{self, File};
 use std::io::{self, BufReader, BufWriter, Write};
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{self, Path, PathBuf};
-use std::thread::current;
 #[cfg(not(unix))]
 compile_error!("MICROSLOP LOVER AHHHHHHHHHH");
 
@@ -58,10 +57,9 @@ fn main() -> Result<()> {
     } else {
         print!(
             "The shell's rc file was not specified. \n\
-        Please provide the RELATIVE path to it ({}), \
+        Please provide the RELATIVE path to it (.zshrc, .bashrc), \
         or type \"auto\" to find it automatically.\n\n\
-        ~/",
-            ".zshrc"
+        ~/"
         );
         loop {
             io::stdout().flush()?;
@@ -80,9 +78,9 @@ fn main() -> Result<()> {
             }
             break;
         }
-        rc_path = PathBuf::from(format!("{}/{}", home_dir_string, stdin_buf.trim()));
+        rc_path = PathBuf::from(format!("{home_dir_string}/{}", stdin_buf.trim()));
         settings_json.insert(
-            "rc_file".to_string(),
+            "rc_file".to_owned(),
             Value::String(rc_path.to_string_lossy().into_owned()),
         );
     }
@@ -137,18 +135,18 @@ fn find_shell_rc(home_string: &str) -> String {
     let mut relative_rc_path = String::new();
 
     if current_shell.contains("/bash") {
-        relative_rc_path = ".bashrc".to_string();
+        relative_rc_path = ".bashrc".to_owned();
     } else if current_shell.contains("/sh") {
-        relative_rc_path = ".profile".to_string()
+        relative_rc_path = ".profile".to_owned();
     } else if current_shell.contains("/zsh") {
         const ZSH_RC_PRIORITY: [&str; 3] = [".zshrc", ".config/.zshrc", ".config/zsh/.zshrc"];
-        
+
         // Loop through the priority list, stopping once an existing file has been found
         for zsh_relative_rc_path in ZSH_RC_PRIORITY {
             let zsh_absolute_rc_path = format!("{home_string}/{zsh_relative_rc_path}");
             dbg!(&zsh_absolute_rc_path);
             if fs::exists(Path::new(&zsh_absolute_rc_path)).unwrap_or(false) {
-                relative_rc_path = zsh_relative_rc_path.to_string();
+                relative_rc_path = zsh_relative_rc_path.to_owned();
                 break;
             }
         }
