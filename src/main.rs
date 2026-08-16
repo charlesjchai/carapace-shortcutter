@@ -1,102 +1,193 @@
-use anyhow::{Context, Result};
+mod args;
+
+use anyhow::{Context, Ok, Result};
+use args::CarapaceArgs;
 use clap::Parser;
 use serde_json::Value;
-use std::fs::File;
+use std::env;
+use std::fs::{self, File};
 use std::io::{self, BufReader, BufWriter, Write};
-use std::path::Path;
-
-#[cfg(not(target_family = "unix"))]
-compile_error!("Support for non-unix systems is not yet supported.");
+use std::os::unix::fs::OpenOptionsExt;
+use std::path::{self, Path, PathBuf};
+#[cfg(not(unix))]
+compile_error!("MICROSLOP LOVER AHHHHHHHHHH");
 
 fn main() -> Result<()> {
-    if cfg!(not(target_family = "unix")) {
-        panic!("Support for non-unix systems is not yet supported.");
-    }
-
-    let file_path: &Path = Path::new("settings.json");
-    // Open the file with read and write power
-    let file = File::options()
+    let json_path = PathBuf::from("resources/settings.json");
+    let aliases_path = PathBuf::from("resources/aliases");
+    let json_file = File::options()
         .read(true)
         .write(true)
         .create(true)
-        .open(file_path.to_str().unwrap())?;
-    /*let mut file: File =  if Path::try_exists(file_path)? {
-        File::open(file_path).context(area_err!("File could not be opened"))?
-    } else {
-        File::create_new(file_path).context(area_err!("File could not be created"))?
-    };*/
-    let reader = BufReader::new(&file);
+        .open(json_path.to_str().unwrap())
+        .context(area_err!("Could not open settings.json"))?;
+    let mut aliases_file = File::options()
+        .read(true)
+        .write(true)
+        .create(true)
+        .mode(0o755)
+        .open(aliases_path.to_str().unwrap())
+        .context(area_err!("Could not open `aliases` file"))?;
+    let reader = BufReader::new(&json_file);
 
     // Either creates a mutable copy of settings.json or initializes an empty one
-    let mut json_val = if file.metadata()?.len() == 0 {
+    let mut json_val = if json_file.metadata()?.len() == 0 {
         Value::Object(serde_json::Map::new())
     } else {
         serde_json::from_reader(reader).context(area_err!("Invalid syntax"))?
     };
-    let settings = json_val
+
+    let mut rc_path: PathBuf = PathBuf::new();
+
+    // Convert the home directory into a Cow and back into a String
+    let home_dir_string: String = home::home_dir().unwrap().to_string_lossy().into_owned();
+
+    let args = CarapaceArgs::parse();
+    if matches!(args.command, CommandType::Setup) {
+        setup(&home_dir_string, &mut rc_path, &mut json_val, &aliases_path);
+        json_save(&json_path, &json_val);
+    }
+
+    let settings_json = json_val
         .as_object_mut()
         .context(area_err!("Not an object"))?;
-    /*let mut settings: Map<String, Value> = if file.metadata()?.len() == 0 {
-        Map::new()
-    } else {
-        let json_temp =
-            serde_json::from_reader(reader).context(area_err!("Invalid JSON syntax"))?;
-        match json_temp {
-            Value::Object(map) => map,
-            _ => bail!(area_err!("JSON root is not an object")),
-        }
-    };*/
 
     // Asks for the shell's rc file if it isn't found
-    let rc_path: &Path;
-    if settings.contains_key("shell_rc_file") {
-        rc_path = Path::new(&settings["shell_rc_file"].to_string());
+    if settings_json.contains_key("rc_file") {
+        rc_path = PathBuf::from(
+            settings_json["rc_file"]
+                .as_str()
+                .context(area_err!("Error reading JSON"))?,
+        );
     } else {
-        print!(
-            "The shell's rc file was not specified. \n\
-        Please provide the path to it (~/.zshrc, ~/.bashrc), \
-        or type \"auto\" to find it automatically.\n\n\
-        Shell rc file path: "
-        );
-        io::stdout().flush()?;
-        let mut rc_temp = String::new();
-        io::stdin()
-            .read_line(&mut rc_temp)
-            .context(area_err!("Failed to read rc file"))?;
-        rc_path = Path::new(&rc_temp);
-        settings.insert(
-            "shell_rc_file".to_string(),
-            Value::String(rc_temp.trim().to_string()),
-        );
+        eprintln!("The shell's rc file was not specified. Please run `pacecut setup`.");
+        std::process::exit(1);    
     }
-    dbg!(&settings);
+
+    // Find if shell rc contains `aliases`
+    let aliases_temp: PathBuf = path::absolute(&aliases_path)?;
+    let aliases_path_str = aliases_temp.to_str().unwrap();
+
+    let rc_contents = fs::read_to_string(&rc_path).unwrap();
 
 
-    
-    let file_temp = File::create(file_path)?;
-    let mut writer = BufWriter::new(file_temp);
-    quit(&mut writer, &json_val);
+    json_save(&json_path, &json_val);
+    Ok(())
 }
 
 /// Formats an error message with its location (file, line and column)
-/// Only use with anyhow error handling
+/// Only use with `anyhow::context`
 macro_rules! area_err {
     ($a:expr) => {
-        format!("\"{}\" at {}:{}:{}", $a, file!(), line!(), column!())
+        format!("Error \"{}\" at {}:{}:{}", $a, file!(), line!(), column!())
     };
 }
 pub(crate) use area_err;
 
-/// A shortcut tool that makes shortcuts of shell commands
-#[derive(Parser)]
-#[command(version, about)]
-struct Args {
-    /// Add a shortcut
-    add: String,
+use crate::args::CommandType;
+
+fn setup(
+    home_dir_string: &str,
+    rc_path: &mut PathBuf,
+    json_val: &mut Value,
+    aliases_path: &Path,
+) {
+    let mut stdin_buf = String::new();
+    print!(
+        "Please provide the RELATIVE path to the user's \
+        shell rc file (.zshrc, .bashrc), \
+        or type \"auto\" to find it automatically.\n\n\
+        ~/"
+    );
+    loop {
+        io::stdout().flush().unwrap();
+        io::stdin()
+            .read_line(&mut stdin_buf)
+            .expect("Failed to read rc file");
+        if stdin_buf.trim() == "auto" {
+            stdin_buf = find_shell_rc(&home_dir_string);
+            if stdin_buf.is_empty() {
+                print!(
+                    "A shell rc file could not be found. Please try again\n\
+                    ~/"
+                );
+                continue;
+            }
+        }
+        break;
+    }
+    rc_path.push(format!("{home_dir_string}/{}", stdin_buf.trim()));
+    //rc_path = &mut PathBuf::from(&format!("{home_dir_string}/{}", stdin_buf.trim()));
+    let settings_json = json_val
+        .as_object_mut()
+        .expect("Not an object");
+    settings_json.insert(
+        "rc_file".to_owned(),
+        Value::String(rc_path.to_string_lossy().into_owned()),
+    );
+
+    let aliases_temp: PathBuf = path::absolute(&aliases_path).expect("File does not exist");
+    let aliases_path_str = aliases_temp.to_str().unwrap();
+    let rc_contents = fs::read_to_string(&rc_path).unwrap();
+
+    let mut rc_file = File::options()
+        .append(true)
+        .create(true)
+        .open(&rc_path)
+        .expect(
+            "Shell rc file could not be opened, check the user's permissions"
+        );
+
+    if !rc_contents.contains(aliases_path_str) {
+        println!("`aliases` file not found in shell rc, inserting...");
+        writeln!(
+            rc_file,
+            ". {} # Generated by carapace-shortcutter",
+            path::absolute(&aliases_path)
+                .expect("File doesn't exist.")
+                .to_str()
+                .unwrap()
+        ).unwrap();
+    }
 }
 
-fn quit(mut writer: impl std::io::Write, value: &Value) -> ! {
+/// Finds the shell's rc depending on the current shell
+fn find_shell_rc(home_string: &str) -> String {
+    let current_shell =
+        env::var("SHELL").expect("$SHELL not found. Something is seriously wrong with your shell.");
+
+    // The path relative to the home directory (.bashrc, .zshrc)
+    let mut relative_rc_path = String::new();
+
+    if current_shell.contains("/bash") {
+        relative_rc_path = ".bashrc".to_owned();
+    } else if current_shell.contains("/sh") {
+        relative_rc_path = ".profile".to_owned();
+    } else if current_shell.contains("/zsh") {
+        const ZSH_RC_PRIORITY: [&str; 3] = [".zshrc", ".config/.zshrc", ".config/zsh/.zshrc"];
+
+        // Loop through the priority list, stopping once an existing file has been found
+        for zsh_relative_rc_path in ZSH_RC_PRIORITY {
+            let zsh_absolute_rc_path = format!("{home_string}/{zsh_relative_rc_path}");
+
+            if fs::exists(Path::new(&zsh_absolute_rc_path)).unwrap_or(false) {
+                relative_rc_path = zsh_relative_rc_path.to_owned();
+                break;
+            }
+        }
+    }
+
+    if relative_rc_path.is_empty() {
+        return String::new();
+    }
+    println!("Choosing {home_string}/{relative_rc_path} as shell rc...");
+    relative_rc_path.to_owned()
+}
+
+fn json_save(path: &Path, value: &Value) {
+    // Truncate the file and overwrite it
+    let file = File::create(path).unwrap();
+    let mut writer = BufWriter::new(file);
     serde_json::to_writer_pretty(&mut writer, value).expect("Could not read Value");
     writer.flush().unwrap();
-    std::process::exit(0);
 }
