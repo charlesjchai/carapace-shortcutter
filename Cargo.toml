@@ -6,6 +6,10 @@ description = "A command-line tool that makes aliases of shell commands and lua 
 license = "MIT"
 repository = "https://github.com/charlesjchai/carapace-shortcutter"
 
+[[bin]]
+name = "pacecut"
+path = "src/main.rs"
+
 [dependencies]
 anyhow = "1.0"
 clap = { version = "4.6", features = ["derive"] }

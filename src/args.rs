@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use clap::{Args, Parser, Subcommand};
 
 #[derive(Debug, Parser)]
@@ -10,8 +12,11 @@ pub struct CarapaceArgs {
 
 #[derive(Debug, Subcommand)]
 pub enum ObjectType {
-    /// Create, remove, or update aliases
+    /// Create or remove aliases
     Alias(AliasCommand),
+
+    /// Create or remove monikers
+    Moniker(MonikerCommand),
 
     /// Run the setup process
     Setup,
@@ -22,30 +27,54 @@ pub struct AliasCommand {
     #[command(subcommand)]
     pub command: AliasSubCommand,
 }
+#[derive(Debug, Args)]
+pub struct MonikerCommand {
+    #[command(subcommand)]
+    pub command: MonikerSubCommand,
+}
 
 #[derive(Debug, Subcommand)]
 pub enum AliasSubCommand {
-    /// Add a shortcut
+    /// Add an alias
     Create(CreateAlias),
 
-    /// Remove a shortcut
+    /// Remove an alias
+    Remove(RemoveObject),
+}
+#[derive(Debug, Subcommand)]
+pub enum MonikerSubCommand {
+    /// Add a moniker
+    Create(CreateMoniker),
+
+    /// Remove a moniker
     Remove(RemoveObject),
 }
 
+/// "alias" and "aliasee" are equivalent to the left and right sides of the builtin alias command.
+/// ```
+/// alias ls='ls --color=auto'
+/// pacecut alias create ls "ls --color=auto"
+/// ```
 #[derive(Debug, Args)]
 pub struct CreateAlias {
-    /// The name of your shortcut
-    pub name: String,
+    /// The command to activate the alias
+    pub trigger: String,
 
     /// The command you want to alias
-    pub old_command: String,
+    pub aliasee: String,
+}
+/// The moniker needs the path of a Lua file
+#[derive(Debug, Args)]
+pub struct CreateMoniker {
+    /// The command to activate the moniker
+    pub trigger: String,
 
-    /// The final alias
-    pub alias: String,
+    /// The moniker's path
+    pub moniker_path: PathBuf,
 }
 
 #[derive(Debug, Args)]
 pub struct RemoveObject {
     /// The object to be removed
-    pub entity: String,
+    pub object: String,
 }

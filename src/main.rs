@@ -1,8 +1,7 @@
 mod args;
 
 use anyhow::{Context, Result};
-use args::CarapaceArgs;
-use args::ObjectType;
+use args::{CarapaceArgs, ObjectType};
 use clap::Parser;
 use serde_json::Value;
 use std::env;
@@ -80,7 +79,7 @@ fn main() -> Result<()> {
     let aliases_path_str = aliases_temp.to_str().unwrap();
 
     let rc_contents = fs::read_to_string(&rc_path)?;
-
+    dbg!(&args);
     json_save(&json_path, &json_val)?;
     Ok(())
 }
