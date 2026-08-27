@@ -3,8 +3,9 @@ name = "carapace-shortcutter"
 version = "0.1.0"
 edition = "2024"
 description = "A command-line tool that makes aliases of shell commands and lua scripts"
-license = "MIT"
+readme = "README.md"
 repository = "https://github.com/charlesjchai/carapace-shortcutter"
+license = "MIT"
 
 [[bin]]
 name = "pacecut"
