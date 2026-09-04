@@ -1,4 +1,4 @@
-# carapace-shortcutter (pacecut)
+# carapace-shortcutter (csc)
 
 ## Description
 
