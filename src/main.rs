@@ -65,60 +65,56 @@ fn main() -> Result<()> {
         .as_object_mut()
         .context(format_err!("Not an object"))?;
 
-    // Asks for the shell's rc file if it isn't found
-    if settings_json.contains_key("rc_file") {
-        rc_path = PathBuf::from(
-            settings_json["rc_file"]
-                .as_str()
-                .context(format_err!("Error reading JSON"))?
-                .replace('~', &home_dir_string),
-        );
-    } else {
-        bail!("ERROR: The shell's rc file was not specified, run `csc setup`");
-    }
-
     match args.command {
         ActionType::Alias(alias_command) => {
-            let aliases = settings_json["aliases"]
+            let aliases = settings_json
+                .get_mut("aliases")
+                .context(format_err!("Internal JSON error, run `csc setup`"))?
                 .as_object_mut()
-                .context(format_err!("Internal JSON error, run `csc` setup"))?;
+                .context(format_err!("Not an object"))?;
             match alias_command.subcommand {
-                AliasSubCommand::Create(create_request) => {
+                AliasSubCommand::Add(create_request) => {
                     writeln!(
                         shortcuts_file,
-                        "alias {}={}",
-                        create_request.trigger, create_request.aliasee
+                        "alias {}='{}'",
+                        create_request.alias, create_request.old_command
                     )?; // Write the alias command to shortcuts_file and to data.json
                     println!(
                         "Adding alias '{} -> {}'...",
-                        create_request.trigger, create_request.aliasee
+                        create_request.alias, create_request.old_command
                     );
                     if let Some(old_alias) = aliases.insert(
-                        create_request.trigger,
-                        Value::String(create_request.aliasee),
-                    ) { // Check if an alias already exists
-                        
-                        println!("Replaced old alias '{}'", old_alias.as_str().unwrap_or("Invalid"));
-                    }
-                }
-                AliasSubCommand::Remove(remove_request) => {
-                    if let Some(old_alias) = aliases.remove(&remove_request.shortcut) {
+                        create_request.alias,
+                        Value::String(create_request.old_command),
+                    ) {
+                        // Check if an alias already exists
                         println!(
-                            "Deleted '{} -> {}'",
-                            remove_request.shortcut, old_alias
-                        ); // Print the trigger and the aliasee
+                            "Replaced old aliasee '{}'",
+                            old_alias.as_str().unwrap_or("Invalid")
+                        );
+                    }
+                    println!(
+                        "Done, restart your terminal or run `source {}` for changes to take affect.",
+                        aliases_path.to_str().unwrap().replace(" ", "\\ ")
+                    );
+                }
+                AliasSubCommand::Del(remove_request) => {
+                    if let Some(old_alias) = aliases.remove(&remove_request.shortcut) {
+                        println!("Deleted '{} -> {}'", remove_request.shortcut, old_alias); // Print the trigger and the aliasee
                     } else {
                         eprintln!("ERROR: alias '{}' never existed.", remove_request.shortcut);
+                    }
+                }
+                AliasSubCommand::List => {
+                    println!("Aliases:");
+                    for (key, value) in aliases {
+                        println!("{} -> {}", key, value);
                     }
                 }
             }
         }
         ActionType::Moniker(_x) => {
             todo!("Make moniker functionality");
-        }
-
-        ActionType::Synchronize => {
-            todo!("Make synchronizer functionality");
         }
 
         ActionType::Setup => bail!(
@@ -172,7 +168,7 @@ fn setup(
         }
         break;
     }
-    
+
     rc_path.push(format!("{home_dir_string}/{}", stdin_buf.trim()));
     let settings_json = json_val
         .as_object_mut()
@@ -202,9 +198,11 @@ fn setup(
             "Shell rc file could not be opened, check the user's permissions"
         ))?;
 
-    if !rc_contents.contains(&aliases_path_str
-                .replace(home_dir_string, "~")
-                .replace(" ", "\\ ")) {
+    if !rc_contents.contains(
+        &aliases_path_str
+            .replace(home_dir_string, "~")
+            .replace(" ", "\\ "),
+    ) {
         println!("`aliases` file not found in shell rc, inserting...");
         writeln!(
             rc_file,
@@ -223,7 +221,7 @@ fn setup(
 /// Finds the shell's rc depending on the current shell
 fn find_shell_rc(home_string: &str) -> Result<String> {
     let current_shell = env::var("SHELL").context(format_err!(
-        "SHELL environment variable not found. Please set it to the path of your current shell."
+        "$SHELL environment variable not found. Please set it to the path of your current shell."
     ))?;
 
     // The path relative to the home directory (.bashrc, .zshrc)

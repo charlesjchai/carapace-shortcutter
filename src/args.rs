@@ -15,11 +15,9 @@ pub enum ActionType {
     /// Create or remove aliases
     Alias(AliasCommand),
 
+    /// TBA
     /// Create or remove monikers
     Moniker(MonikerCommand),
-
-    /// Synchronize the `shortcuts` file with the data.json file
-    Synchronize,
 
     /// Run the setup process
     Setup,
@@ -38,11 +36,14 @@ pub struct MonikerCommand {
 
 #[derive(Debug, Subcommand)]
 pub enum AliasSubCommand {
-    /// Add an alias
-    Create(CreateAlias),
+    /// Create an alias
+    Add(CreateAlias),
 
-    /// Remove an alias
-    Remove(RemoveObject),
+    /// Delete an alias
+    Del(RemoveObject),
+
+    /// List aliases
+    List,
 }
 #[derive(Debug, Subcommand)]
 pub enum MonikerSubCommand {
@@ -51,6 +52,9 @@ pub enum MonikerSubCommand {
 
     /// Remove a moniker
     Remove(RemoveObject),
+
+    /// List monikers
+    List,
 }
 
 /// Running `trigger` runs `aliasee`
@@ -61,10 +65,10 @@ pub enum MonikerSubCommand {
 #[derive(Debug, Args)]
 pub struct CreateAlias {
     /// The command to activate the alias
-    pub trigger: String,
+    pub alias: String,
 
     /// The command you want to alias
-    pub aliasee: String,
+    pub old_command: String,
 }
 /// The moniker needs the path of a Lua file
 /// ```
