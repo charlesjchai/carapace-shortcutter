@@ -7,16 +7,19 @@ use clap::{Args, Parser, Subcommand};
 pub struct CarapaceArgs {
     /// Main action
     #[command(subcommand)]
-    pub command: ObjectType,
+    pub command: ActionType,
 }
 
 #[derive(Debug, Subcommand)]
-pub enum ObjectType {
+pub enum ActionType {
     /// Create or remove aliases
     Alias(AliasCommand),
 
     /// Create or remove monikers
     Moniker(MonikerCommand),
+
+    /// Synchronize the `shortcuts` file with the data.json file
+    Synchronize,
 
     /// Run the setup process
     Setup,
@@ -25,12 +28,12 @@ pub enum ObjectType {
 #[derive(Debug, Args)]
 pub struct AliasCommand {
     #[command(subcommand)]
-    pub command: AliasSubCommand,
+    pub subcommand: AliasSubCommand,
 }
 #[derive(Debug, Args)]
 pub struct MonikerCommand {
     #[command(subcommand)]
-    pub command: MonikerSubCommand,
+    pub subcommand: MonikerSubCommand,
 }
 
 #[derive(Debug, Subcommand)]
@@ -50,10 +53,10 @@ pub enum MonikerSubCommand {
     Remove(RemoveObject),
 }
 
-/// "alias" and "aliasee" are equivalent to the left and right sides of the builtin alias command.
+/// Running `trigger` runs `aliasee`
 /// ```
-/// alias ls='ls --color=auto'
-/// pacecut alias create ls "ls --color=auto"
+/// csc alias create ls "ls --color=auto"
+/// ls # Calls `ls --color=auto`
 /// ```
 #[derive(Debug, Args)]
 pub struct CreateAlias {
@@ -64,6 +67,9 @@ pub struct CreateAlias {
     pub aliasee: String,
 }
 /// The moniker needs the path of a Lua file
+/// ```
+///
+/// ```
 #[derive(Debug, Args)]
 pub struct CreateMoniker {
     /// The command to activate the moniker
@@ -73,8 +79,9 @@ pub struct CreateMoniker {
     pub moniker_path: PathBuf,
 }
 
+/// NOTE: Aliases and monikers share the same remove struct
 #[derive(Debug, Args)]
 pub struct RemoveObject {
     /// The object to be removed
-    pub object: String,
+    pub shortcut: String,
 }

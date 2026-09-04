@@ -6,4 +6,4 @@ carapace-shortcutter is a command-line utility that allows you to make shortcuts
 ### Dependencies
 - `git`
 - `rustup`
-- A Unix-based operating system (macOS, Linux, BSD), Windows is not yet supported.
+- A Unix-basedw operating system (macOS, Linux, BSD), Windows is not yet supported.

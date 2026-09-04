@@ -1,14 +1,16 @@
 mod args;
 
 use anyhow::{Context, Result, bail};
-use args::{CarapaceArgs, ObjectType};
 use clap::Parser;
-use serde_json::Value;
+use serde_json::{Map, Value};
 use std::env;
 use std::fs::{self, File};
 use std::io::{self, BufReader, Write};
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{self, Path, PathBuf};
+
+use crate::args::{ActionType, AliasSubCommand, CarapaceArgs};
+
 #[cfg(not(unix))]
 compile_error!("MICROSLOP LOVER AHHHHHHHHHH");
 
@@ -21,15 +23,15 @@ fn main() -> Result<()> {
         .to_owned();
     fs::create_dir_all(&data_dir).context(format_err!("Could not create directory(s)"))?;
 
-    let json_path = data_dir.join("settings.json");
-    let aliases_path = data_dir.join("aliases");
+    let json_path = data_dir.join("data.json");
+    let aliases_path = data_dir.join("shortcuts");
     let json_file = File::options()
         .read(true)
         .write(true)
         .create(true)
         .open(json_path.to_str().unwrap())
         .context(format_err!("Could not open settings.json"))?;
-    let mut aliases_file = File::options()
+    let mut shortcuts_file = File::options()
         .read(true)
         .write(true)
         .create(true)
@@ -53,7 +55,7 @@ fn main() -> Result<()> {
         .into_owned();
 
     let args = CarapaceArgs::parse();
-    if matches!(args.command, ObjectType::Setup) {
+    if matches!(args.command, ActionType::Setup) {
         setup(&home_dir_string, &mut rc_path, &mut json_val, &aliases_path)?;
         json_save(&json_path, &json_val)?;
         return Ok(());
@@ -69,15 +71,60 @@ fn main() -> Result<()> {
             settings_json["rc_file"]
                 .as_str()
                 .context(format_err!("Error reading JSON"))?
-                .replace("~", &home_dir_string),
-        );
-    } else if matches!(args.command, ObjectType::Setup) {
-        bail!(
-            "ERROR: `ObjectType::Setup` was detected after \
-        setup sequence, this should never happen"
+                .replace('~', &home_dir_string),
         );
     } else {
-        bail!("The shell's rc file was not specified. Please run `pacecut setup`");
+        bail!("ERROR: The shell's rc file was not specified, run `csc setup`");
+    }
+
+    match args.command {
+        ActionType::Alias(alias_command) => {
+            let aliases = settings_json["aliases"]
+                .as_object_mut()
+                .context(format_err!("Internal JSON error, run `csc` setup"))?;
+            match alias_command.subcommand {
+                AliasSubCommand::Create(create_request) => {
+                    writeln!(
+                        shortcuts_file,
+                        "alias {}={}",
+                        create_request.trigger, create_request.aliasee
+                    )?; // Write the alias command to shortcuts_file and to data.json
+                    println!(
+                        "Adding alias '{} -> {}'...",
+                        create_request.trigger, create_request.aliasee
+                    );
+                    if let Some(old_alias) = aliases.insert(
+                        create_request.trigger,
+                        Value::String(create_request.aliasee),
+                    ) { // Check if an alias already exists
+                        
+                        println!("Replaced old alias '{}'", old_alias.as_str().unwrap_or("Invalid"));
+                    }
+                }
+                AliasSubCommand::Remove(remove_request) => {
+                    if let Some(old_alias) = aliases.remove(&remove_request.shortcut) {
+                        println!(
+                            "Deleted '{} -> {}'",
+                            remove_request.shortcut, old_alias
+                        ); // Print the trigger and the aliasee
+                    } else {
+                        eprintln!("ERROR: alias '{}' never existed.", remove_request.shortcut);
+                    }
+                }
+            }
+        }
+        ActionType::Moniker(_x) => {
+            todo!("Make moniker functionality");
+        }
+
+        ActionType::Synchronize => {
+            todo!("Make synchronizer functionality");
+        }
+
+        ActionType::Setup => bail!(
+            "ERROR: `ObjectType::Setup` was detected after \
+                setup sequence, this should never happen"
+        ),
     }
 
     json_save(&json_path, &json_val)?;
@@ -112,10 +159,12 @@ fn setup(
         io::stdin().read_line(&mut stdin_buf)?;
         if stdin_buf.trim().is_empty() {
             let shell_rc_buf = find_shell_rc(home_dir_string);
-            if shell_rc_buf.is_err() {
-                print!(
-                    "A shell rc file could not be found. Please manually input the path to one.\n\
-                    ~/"
+            if let Err(err) = shell_rc_buf {
+                eprint!(
+                    "ERROR: {}\nA shell rc file could not be found. \
+                    Please manually input the path to one.\n\
+                    ~/",
+                    err
                 );
                 continue;
             }
@@ -128,6 +177,8 @@ fn setup(
     let settings_json = json_val
         .as_object_mut()
         .context(format_err!("Not an object"))?;
+
+    // Initialize settings.json
     settings_json.insert(
         "rc_file".to_owned(),
         Value::String(
@@ -137,6 +188,9 @@ fn setup(
                 .replace(home_dir_string, "~"),
         ),
     );
+    settings_json.insert("aliases".to_owned(), Value::Object(Map::new()));
+    settings_json.insert("monikers".to_owned(), Value::Object(Map::new()));
+
     let aliases_path_str = aliases_path.to_str().unwrap();
     let rc_contents = fs::read_to_string(&rc_path)?;
 
@@ -157,7 +211,7 @@ fn setup(
                 .to_str()
                 .unwrap()
                 .replace(home_dir_string, "~") // Make the path relative
-                .replace(" ", "\\ ") //           and escape any spaces
+                .replace(' ', "\\ ") //           and escape any spaces
         )?;
     }
     Ok(())
@@ -191,7 +245,7 @@ fn find_shell_rc(home_string: &str) -> Result<String> {
     }
 
     if relative_rc_path.is_empty() {
-        anyhow::bail!("Your shell is not currently supported");
+        bail!("Your shell is not currently supported");
     }
     println!("Choosing {home_string}/{relative_rc_path} as shell rc...");
     Ok(relative_rc_path.clone())

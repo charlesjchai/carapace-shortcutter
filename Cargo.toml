@@ -8,7 +8,7 @@ repository = "https://github.com/charlesjchai/carapace-shortcutter"
 license = "MIT"
 
 [[bin]]
-name = "pacecut"
+name = "csc"
 path = "src/main.rs"
 
 [dependencies]
