@@ -67,8 +67,8 @@ jobs:
         run: |
           mkdir -p artifacts
 
-          cp "target/${{ matrix.target }}/release/your-program" \
-             "artifacts/your-program-${{ matrix.target }}"
+          cp "target/${{ matrix.target }}/release/csc" \
+             "artifacts/csc-${{ matrix.target }}"
 
       - name: Upload
         uses: actions/upload-artifact@v4
