@@ -59,7 +59,10 @@ fn main() -> Result<()> {
         setup(&home_dir_string, &mut rc_path, &mut json_val, &aliases_path)?;
         json_synchronize(&mut json_file, &mut shortcuts_file, &json_val)?;
         return Ok(());
-    } else if !NEEDED_KEYS.iter().any(|k| {
+    } 
+
+    const NEEDED_KEYS: [&str; 3] = ["rc_file", "aliases", "monikers"];
+    if !NEEDED_KEYS.iter().any(|k| {
         json_val
             .as_object()
             .expect("Not an object")
