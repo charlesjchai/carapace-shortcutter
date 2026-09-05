@@ -2,6 +2,7 @@ mod args;
 
 use anyhow::{Context, Result, bail};
 use clap::Parser;
+use directories::{ProjectDirs, UserDirs};
 use serde_json::{Map, Value};
 use std::env;
 use std::fs::{self, File};
@@ -15,7 +16,7 @@ use crate::args::{ActionType, AliasSubCommand, CarapaceArgs};
 compile_error!("MICROSLOP LOVER AHHHHHHHHHH");
 
 fn main() -> Result<()> {
-    let data_dir = directories::ProjectDirs::from("", "", "carapace-shortcutter")
+    let data_dir = ProjectDirs::from("", "", "carapace-shortcutter")
         .context(format_err!(
             "Could not determine application data directory"
         ))?
@@ -48,14 +49,25 @@ fn main() -> Result<()> {
     };
 
     let mut rc_path: PathBuf = PathBuf::new();
-    let home_dir_string: String = directories::UserDirs::new()
+    let home_dir_string: String = UserDirs::new()
         .unwrap()
         .home_dir()
         .to_string_lossy()
         .into_owned();
 
+    const NEEDED_KEYS: [&str; 3] = ["rc_file", "aliases", "monikers"];
     let args = CarapaceArgs::parse();
     if matches!(args.command, ActionType::Setup) {
+        setup(&home_dir_string, &mut rc_path, &mut json_val, &aliases_path)?;
+        json_save(&json_path, &json_val)?;
+        return Ok(());
+    } else if !NEEDED_KEYS.iter().any(|k| {
+        json_val
+            .as_object()
+            .expect("Not an object")
+            .contains_key(k.to_owned())
+    }) {
+        eprintln!("Necessary keys not found in JSON, running setup...");
         setup(&home_dir_string, &mut rc_path, &mut json_val, &aliases_path)?;
         json_save(&json_path, &json_val)?;
         return Ok(());
@@ -90,7 +102,7 @@ fn main() -> Result<()> {
                         // Check if an alias already exists
                         println!(
                             "Replaced old aliasee '{}'",
-                            old_alias.as_str().unwrap_or("Invalid")
+                            old_alias.as_str().unwrap_or_default()
                         );
                     }
                     println!(
@@ -128,8 +140,12 @@ fn main() -> Result<()> {
 }
 
 /// Formats an error message with its location (file, line and column)
-///
 /// Only use with `anyhow::context`
+/// ```
+/// let none = None;
+/// let val = none.context(format_err!("None detected"))?;
+/// // Returns "Error: "None detected" at file:line:column "
+/// ```
 macro_rules! format_err {
     ($a:expr) => {
         format!("\"{}\" at {}:{}:{}", $a, file!(), line!(), column!())
