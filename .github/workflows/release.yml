@@ -55,7 +55,7 @@ jobs:
         run: cargo install cross --git https://github.com/cross-rs/cross
 
       - name: Build macOS
-        if: matrix.target == 'aarch64-apple-darwin'
+        if: contains(matrix.target, 'apple')
         run: cargo build --release --target ${{ matrix.target }}
 
       - name: Build Linux
