@@ -58,7 +58,7 @@ pub enum MonikerSubCommand {
 }
 
 /// Running `trigger` runs `aliasee`
-/// ```
+/// ```bash
 /// csc alias create ls "ls --color=auto"
 /// ls # Calls `ls --color=auto`
 /// ```
