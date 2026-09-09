@@ -11,7 +11,10 @@ use std::path::{self, Path, PathBuf};
 
 use crate::args::{ActionType, AliasSubCommand, CarapaceArgs};
 
-#[cfg(not(unix))]
+#[cfg(all(not(unix), not(windows)))]
+compile_error!("Your operating system is not a Unix-based operating system, only Unix-based operating systems are supported.");
+
+#[cfg(windows)]
 compile_error!("MICROSLOP LOVER AHHHHHHHHHH");
 
 fn main() -> Result<()> {
