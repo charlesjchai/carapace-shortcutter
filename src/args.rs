@@ -15,7 +15,6 @@ pub enum ActionType {
     /// Create or remove aliases
     Alias(AliasCommand),
 
-    /// TBA
     /// Create or remove monikers
     Moniker(MonikerCommand),
 
@@ -40,7 +39,7 @@ pub enum AliasSubCommand {
     Add(CreateAlias),
 
     /// Delete an alias
-    Del(RemoveObject),
+    Del(RemoveAlias),
 
     /// List aliases
     List,
@@ -51,10 +50,13 @@ pub enum MonikerSubCommand {
     Create(CreateMoniker),
 
     /// Remove a moniker
-    Remove(RemoveObject),
+    Remove(RemoveMoniker),
 
     /// List monikers
     List,
+
+    /// Run a moniker, intended for automated use (ex. `alias ls='csc moniker execute ls-fancy'`).
+    Execute(ExecuteMoniker),
 }
 
 /// Running `trigger` runs `aliasee`
@@ -77,15 +79,29 @@ pub struct CreateAlias {
 #[derive(Debug, Args)]
 pub struct CreateMoniker {
     /// The command to activate the moniker
-    pub trigger: String,
+    pub moniker: String,
 
     /// The moniker's path
     pub moniker_path: PathBuf,
 }
 
-/// NOTE: Aliases and monikers share the same remove struct
 #[derive(Debug, Args)]
-pub struct RemoveObject {
-    /// The object to be removed
-    pub shortcut: String,
+pub struct RemoveAlias {
+    /// The alias to be removed
+    pub alias: String,
+}
+
+#[derive(Debug, Args)]
+pub struct RemoveMoniker {
+    /// The moniker to be removed
+    pub moniker: String,
+}
+
+#[derive(Debug, Args)]
+pub struct ExecuteMoniker {
+    /// The moniker to be executed (name WITHOUT .lua file extention)
+    pub moniker: String,
+
+    #[arg(trailing_var_arg = true)]
+    pub args: Vec<String>,
 }

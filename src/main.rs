@@ -1,8 +1,17 @@
+#[cfg(all(not(unix), not(windows)))]
+compile_error!(
+    "Your operating system is not a Unix-based operating system, only Unix-based operating systems are supported."
+);
+
+#[cfg(windows)]
+compile_error!("MICROSLOP LOVER AHHHHHHHHHH");
+
 mod args;
 
 use anyhow::{Context, Result, bail};
 use clap::Parser;
 use directories::{ProjectDirs, UserDirs};
+use mlua::Lua;
 use serde_json::{Map, Value};
 use std::env;
 use std::fs::{self, File};
@@ -10,10 +19,7 @@ use std::io::{self, BufReader, BufWriter, Seek, Write};
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{self, Path, PathBuf};
 
-use crate::args::{ActionType, AliasSubCommand, CarapaceArgs};
-
-#[cfg(not(unix))]
-compile_error!("MICROSLOP LOVER AHHHHHHHHHH");
+use crate::args::{ActionType, AliasSubCommand, CarapaceArgs, MonikerCommand, MonikerSubCommand};
 
 fn main() -> Result<()> {
     let data_dir = ProjectDirs::from("", "", "carapace-shortcutter")
@@ -22,10 +28,12 @@ fn main() -> Result<()> {
         ))?
         .data_dir()
         .to_owned();
-    fs::create_dir_all(&data_dir).context(format_err!("Could not create directory(s)"))?;
-
+    let moniker_dir = data_dir.join("monikers");
     let json_path = data_dir.join("data.json");
     let aliases_path = data_dir.join("shortcuts");
+    // Create data_dir and moniker_dir in one fell swoop
+    fs::create_dir_all(&moniker_dir).context(format_err!("Could not create directory(s)"))?;
+
     let mut json_file = File::options()
         .read(true)
         .write(true)
@@ -57,7 +65,37 @@ fn main() -> Result<()> {
 
     const NEEDED_KEYS: [&str; 3] = ["rc_file", "aliases", "monikers"];
     let args = CarapaceArgs::parse();
-    if matches!(args.command, ActionType::Setup) {
+    if let ActionType::Moniker(MonikerCommand {
+        subcommand: MonikerSubCommand::Execute(execute_request),
+    }) = args.command
+    {
+        // Handle the `csc moniker execute` command
+        let moniker_name = execute_request.moniker;
+        let moniker_name_lua = format!("{moniker_name}.lua");
+        let moniker_code = fs::read_to_string(moniker_dir.join(&moniker_name_lua)).context(
+            format_err!(format!("Moniker file `{moniker_name_lua}` not found")),
+        )?;
+
+        let lua = Lua::new();
+        let arg_table = lua.create_table().expect("Couldn't create table");
+        for (i, argument) in execute_request.args.into_iter().enumerate() {
+            // Lua arrays are 1-indexed
+            arg_table.set(i + 1, argument).unwrap();
+        }
+        lua.globals().set("arg", arg_table).expect("Couldn't insert table");
+        let status: Option<i32> = lua
+            .load(&moniker_code)
+            .set_name(&moniker_name_lua)
+            .eval()
+            .unwrap_or_else(|e| panic!("Moniker `{moniker_name_lua}` failed with error: {e:?}"));
+        if status.unwrap_or_default() != 0 {
+            bail!(
+                "Moniker {moniker_name_lua} returned non-zero return value: {}",
+                status.unwrap()
+            );
+        }
+        return Ok(());
+    } else if matches!(args.command, ActionType::Setup) {
         setup(&home_dir_string, &mut rc_path, &mut json_val, &aliases_path)?;
         json_synchronize(&mut json_file, &mut shortcuts_file, &json_val)?;
         return Ok(());
@@ -77,58 +115,7 @@ fn main() -> Result<()> {
         .as_object_mut()
         .context(format_err!("Not an object"))?;
 
-    match args.command {
-        ActionType::Alias(alias_command) => {
-            let aliases = settings_json
-                .get_mut("aliases")
-                .context(format_err!("Internal JSON error, run `csc setup`"))?
-                .as_object_mut()
-                .context(format_err!("Not an object"))?;
-            match alias_command.subcommand {
-                AliasSubCommand::Add(create_request) => {
-                    println!(
-                        "Adding alias '{} -> {}'...",
-                        create_request.alias, create_request.old_command
-                    );
-                    if let Some(old_alias) = aliases.insert(
-                        create_request.alias,
-                        Value::String(create_request.old_command),
-                    ) {
-                        // Check if an alias already exists
-                        println!(
-                            "Replaced old aliasee '{}'",
-                            old_alias.as_str().unwrap_or_default()
-                        );
-                    }
-                    println!(
-                        "Done, restart your terminal or run `source {}` for changes to take affect.",
-                        aliases_path.to_str().unwrap().shell_replace()
-                    );
-                }
-                AliasSubCommand::Del(remove_request) => {
-                    if let Some(old_alias) = aliases.remove(&remove_request.shortcut) {
-                        println!("Deleted '{} -> {}'", remove_request.shortcut, old_alias); // Print the trigger and the aliasee
-                    } else {
-                        eprintln!("ERROR: alias '{}' never existed.", remove_request.shortcut);
-                    }
-                }
-                AliasSubCommand::List => {
-                    println!("Aliases:");
-                    for (key, value) in aliases {
-                        println!("{} -> {}", key, value);
-                    }
-                }
-            }
-        }
-        ActionType::Moniker(_x) => {
-            todo!("Make moniker functionality");
-        }
-
-        ActionType::Setup => bail!(
-            "ERROR: `ObjectType::Setup` was detected after \
-                setup sequence, this should never happen"
-        ),
-    }
+    parse_args(args, settings_json, &aliases_path)?;
 
     json_synchronize(&mut json_file, &mut shortcuts_file, &json_val)?;
     Ok(())
@@ -187,10 +174,9 @@ fn setup(
             let shell_rc_buf = find_shell_rc(home_dir_string);
             if let Err(err) = shell_rc_buf {
                 eprint!(
-                    "ERROR: {}\nA shell rc file could not be found. \
+                    "ERROR: {err}\nA shell rc file could not be found. \
                     Please manually input the path to one.\n\
-                    ~/",
-                    err
+                    ~/"
                 );
                 continue;
             }
@@ -282,6 +268,69 @@ fn find_shell_rc(home_string: &str) -> Result<String> {
     Ok(relative_rc_path.clone())
 }
 
+/// Parses the args given to the function
+fn parse_args(args: CarapaceArgs, settings_json: &mut Map<String, Value>, aliases_path: &Path) -> Result<()> {
+    match args.command {
+        ActionType::Alias(alias_command) => {
+            let aliases = settings_json
+                .get_mut("aliases")
+                .context(format_err!("Internal JSON error, run `csc setup`"))?
+                .as_object_mut()
+                .context(format_err!("Not an object"))?;
+            match alias_command.subcommand {
+                AliasSubCommand::Add(create_request) => {
+                    println!(
+                        "Adding alias '{} -> {}'...",
+                        create_request.alias, create_request.old_command
+                    );
+                    if let Some(old_alias) = aliases.insert(
+                        create_request.alias,
+                        Value::String(create_request.old_command),
+                    ) {
+                        // Check if an alias already exists
+                        println!(
+                            "Replaced old aliasee '{}'",
+                            old_alias.as_str().unwrap_or_default()
+                        );
+                    }
+                    println!(
+                        "Done, restart your terminal or run `source {}` for changes to take affect.",
+                        aliases_path.to_str().unwrap().shell_replace()
+                    );
+                }
+                AliasSubCommand::Del(remove_request) => {
+                    if let Some(old_alias) = aliases.remove(&remove_request.alias) {
+                        println!("Deleted '{} -> {}'", remove_request.alias, old_alias); // Print the trigger and the aliasee
+                    } else {
+                        eprintln!("ERROR: alias '{}' never existed.", remove_request.alias);
+                    }
+                }
+                AliasSubCommand::List => {
+                    println!("Aliases:");
+                    for (key, value) in aliases {
+                        println!("{key} -> {value}");
+                    }
+                }
+            }
+        }
+        ActionType::Moniker(moniker_command) => match moniker_command.subcommand {
+            MonikerSubCommand::Create(create_request) => {}
+            MonikerSubCommand::Remove(remove_request) => {}
+            MonikerSubCommand::List => {}
+            MonikerSubCommand::Execute(_) => bail!(
+                "ERROR: `MonikerSubCommand::Execute` was detected after \
+                parsing, this should never happen"
+            ),
+        },
+
+        ActionType::Setup => bail!(
+            "ERROR: `ActionType::Setup` was detected after \
+                setup sequence, this should never happen"
+        ),
+    }
+    Ok(())
+}
+
 /// Synchronizes the shortcuts with the JSON file and the JSON file with the object
 fn json_synchronize(json_file: &mut File, shortcuts_file: &mut File, value: &Value) -> Result<()> {
     json_file.set_len(0)?;
@@ -303,7 +352,7 @@ fn json_synchronize(json_file: &mut File, shortcuts_file: &mut File, value: &Val
 
     let mut writer = BufWriter::new(shortcuts_file);
     for (alias, old_command) in aliases {
-        writer.write_all(&format!("alias {}={}\n", alias, old_command).into_bytes())?;
+        writer.write_all(&format!("alias {alias}={old_command}\n").into_bytes())?;
     }
     writer.flush()?;
     Ok(())
