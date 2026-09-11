@@ -73,8 +73,9 @@ pub struct CreateAlias {
     pub old_command: String,
 }
 /// The moniker needs the path of a Lua file
-/// ```
-///
+/// ```bash
+/// touch script.lua
+/// csc moniker create lua script.lua
 /// ```
 #[derive(Debug, Args)]
 pub struct CreateMoniker {
