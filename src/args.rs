@@ -21,9 +21,8 @@ pub enum ActionType {
     /// Run the setup process
     Setup,
 
-    /// TBA
     /// Cleanup junk
-    Clean,
+    Clean(CleanFlags),
 }
 
 #[derive(Debug, Args)]
@@ -35,6 +34,11 @@ pub struct AliasCommand {
 pub struct MonikerCommand {
     #[command(subcommand)]
     pub subcommand: MonikerSubCommand,
+}#[derive(Debug, Args)]
+pub struct CleanFlags {
+    #[arg(short = 'f', long)]
+    /// Remove the files instead of moving them to the trash
+    pub remove: bool,
 }
 
 #[derive(Debug, Subcommand)]
