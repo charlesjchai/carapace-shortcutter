@@ -13,7 +13,7 @@ use clap::Parser;
 use directories::{ProjectDirs, UserDirs};
 use serde_json::{Map, Value};
 use std::borrow::Cow;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::env;
 use std::fs::{self, File};
 use std::io::{self, BufReader, BufWriter, Seek, Write};
@@ -21,7 +21,7 @@ use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
-use crate::args::{ActionType, AliasSubCommand, CarapaceArgs, MonikerSubCommand};
+use crate::args::{ActionType, AliasSubCommand, CarapaceArgs, CleanFlags, MonikerSubCommand};
 
 static DATA_DIR: LazyLock<PathBuf> = LazyLock::new(|| {
     ProjectDirs::from("", "", "carapace-shortcutter")
@@ -193,12 +193,7 @@ fn setup(rc_path: &mut PathBuf, json_val: &mut Value, aliases_path: &Path) -> Re
             "Shell rc file could not be opened, check the user's permissions"
         ))?;
 
-    if !rc_contents.contains(
-        aliases_path_str
-            .shell_escape_chars()
-            .path_to_relative()
-            .as_ref(),
-    ) {
+    if !rc_contents.contains(&*aliases_path_str.shell_escape_chars().path_to_relative()) {
         println!("`aliases` file not found in shell rc, inserting...");
         writeln!(
             rc_file,
@@ -314,19 +309,11 @@ fn parse_args(
                 .context(area_err!("`monikers` key not found, run `csc setup`"))?
                 .as_array_mut()
                 .context(area_err!("Not an array"))?;
-            // Remove monikers that are not a string and duplicates
-            monikers.retain(Value::is_string);
-            let mut seen = HashSet::new();
-            monikers.retain(|item| seen.insert(item.clone()));
+
             match moniker_command.subcommand {
                 MonikerSubCommand::Create(create_request) => {
-                    if create_request
-                        .moniker_path
-                        .extension()
-                        .unwrap_or_default()
-                        .to_str()
-                        .unwrap()
-                        != "lua"
+                    if create_request.moniker_path.extension().unwrap_or_default()
+                        != std::ffi::OsStr::new("lua")
                     {
                         bail!("You must input a .lua file.");
                     }
@@ -337,23 +324,9 @@ fn parse_args(
                     );
                     let lua_file_path = fs::canonicalize(&create_request.moniker_path)
                         .context(area_err!("File does not exist"))?;
-                    fs::hard_link(
-                        &lua_file_path,
-                        MONIKER_DIR.join(format!("{}.lua", create_request.moniker)),
-                    )
-                    .unwrap_or_else(|e| {
-                        eprintln!("ERROR: Hard link failed: '{e:?}', falling back to a copy");
-                        fs::remove_file(
-                            MONIKER_DIR.join(format!("{}.lua", create_request.moniker)),
-                        )
-                        .expect("Failed to remove file");
-                        fs::copy(
-                            lua_file_path,
-                            MONIKER_DIR.join(format!("{}.lua", create_request.moniker)),
-                        )
-                        .expect("Copy failed");
-                    });
-                    if monikers.contains(&Value::String(create_request.moniker.clone())) {
+                    let lua_dest_path = MONIKER_DIR.join(format!("{}.lua", create_request.moniker));
+                    dbg!(&lua_file_path);
+                    if fs::exists(&lua_dest_path).context(area_err!("Could not overwrite file"))? {
                         let old_moniker = monikers
                             .iter()
                             .position(|x| *x == *create_request.moniker)
@@ -369,10 +342,18 @@ fn parse_args(
                                         .as_str()
                                         .context(area_err!("Not a string"))?
                                 )
+                                .with_extension("lua")
                                 .to_str()
                                 .unwrap()
                         );
+                        fs::remove_file(&lua_dest_path)
+                            .context(area_err!("Could not overwrite file"))?;
                     }
+                    fs::hard_link(&lua_file_path, &lua_dest_path).unwrap_or_else(|e| {
+                        eprintln!("ERROR: Hard link failed: '{e:?}', falling back to a copy");
+                        fs::copy(lua_file_path, lua_dest_path).expect("Copy failed");
+                    });
+
                     monikers.push(Value::String(create_request.moniker));
                     println!(
                         "Done, restart your terminal or run `source {}` for changes to take affect.",
@@ -410,7 +391,7 @@ fn parse_args(
                     if monikers.is_empty() {
                         println!("(None)");
                     } else {
-                        for moniker in monikers {
+                        for moniker in &mut *monikers {
                             let moniker_name =
                                 moniker.as_str().context(area_err!("Not a string"))?;
                             println!(
@@ -426,15 +407,117 @@ fn parse_args(
                     }
                 }
             }
+            // Remove monikers that are not a string and duplicates
+            monikers.retain(Value::is_string);
+            let mut seen = HashSet::new();
+            monikers.retain(|item| seen.insert(item.clone()));
         }
 
-        ActionType::Clean => todo!("Make clean command"),
+        ActionType::Clean(flags) => {
+            let monikers = settings_json
+                .get_mut("monikers")
+                .context(area_err!("`monikers` key not found, run `csc setup`"))?
+                .as_array_mut()
+                .context(area_err!("Not an array"))?;
+            clean(monikers, flags)?;
+        }
 
         ActionType::Setup => bail!(
             "ERROR: `ActionType::Setup` was detected after \
                 setup sequence, this should never happen"
         ),
     }
+    Ok(())
+}
+
+fn clean(monikers: &mut Vec<Value>, flags: CleanFlags) -> Result<()> {
+    #[derive(Debug)]
+    enum FileRemovalReason {
+        NoMonikerAttached,
+        UnrelatedFile,
+        IsDirectory,
+    }
+    // Remove monikers that are not a string and duplicates
+    monikers.retain(Value::is_string);
+    let mut seen = HashSet::new();
+    monikers.retain(|item| seen.insert(item.clone()));
+
+    let mut flagged_files: HashMap<PathBuf, FileRemovalReason> = HashMap::new();
+    for entry in fs::read_dir(&*MONIKER_DIR)? {
+        let entry = entry?;
+        let file_path = entry.path();
+        if file_path.is_dir() {
+            flagged_files.insert(file_path, FileRemovalReason::IsDirectory);
+            continue;
+        }
+        if file_path.is_file() {
+            if !monikers.contains(&Value::String(
+                file_path
+                    .with_extension("")
+                    .file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned(),
+            )) {
+                if file_path.extension().unwrap_or_default() == "lua" {
+                    // Flag files that are in the directory but not in the JSON
+                    flagged_files.insert(file_path, FileRemovalReason::NoMonikerAttached);
+                } else {
+                    flagged_files.insert(file_path, FileRemovalReason::UnrelatedFile);
+                }
+            }
+        }
+    }
+    if flagged_files.is_empty() {
+        println!("Everything is tidy");
+        return Ok(());
+    }
+    if !flags.remove {
+        println!("Files flagged for trash:");
+    } else {
+        println!("Files flagged for REMOVAL:");
+    }
+    for (file, reason) in &flagged_files {
+        let file_relative = &*file.to_str().unwrap().path_to_relative();
+        println!(
+            "`{file_relative}`, reason is \"{}\".",
+            match reason {
+                FileRemovalReason::NoMonikerAttached =>
+                    "there is a .lua file here, but no moniker pointing to it",
+                FileRemovalReason::UnrelatedFile => "only .lua files are allowed here",
+                FileRemovalReason::IsDirectory => "directories are not allowed here",
+            }
+        );
+    }
+    print!("Delete? [y/N]: ");
+    io::stdout().flush()?;
+
+    let mut input = String::new();
+    io::stdin().read_line(&mut input)?;
+    let input = input.trim().to_lowercase();
+    if input.chars().next().unwrap_or('n') != 'y' {
+        println!("Exiting...");
+        return Ok(());
+    }
+    print!(
+        "{} {} {}... ",
+        if !flags.remove { "Trashing "} else { "Removing" },
+        flagged_files.len(),
+        if flagged_files.len() == 1 {
+            "file"
+        } else {
+            "files"
+        }
+    );
+    if !flags.remove {
+        trash::delete_all(flagged_files.keys().into_iter())
+            .context(area_err!("Trash failed, check your permissions"))?;
+    } else {
+        for path in flagged_files.keys().into_iter() {
+            fs::remove_file(path).context(area_err!("Remove failed, check your permissions"))?;
+        }
+    }
+    println!("done");
     Ok(())
 }
 
@@ -462,28 +545,6 @@ fn json_synchronize(json_file: &mut File, shortcuts_file: &mut File, value: &Val
         .context(area_err!("Not an array"))?;
 
     // TODO: Move this to `clean` subcommand
-    for entry in fs::read_dir(&*MONIKER_DIR)? {
-        let entry = entry?;
-        let file_path = entry.path();
-        if file_path.is_dir() {
-            fs::remove_dir(&file_path)?;
-            continue;
-        }
-        if file_path.is_file() {
-            let file_name = file_path.to_str().unwrap();
-            if !monikers.contains(&Value::String(
-                file_path
-                    .with_extension("")
-                    .file_name()
-                    .unwrap()
-                    .to_string_lossy()
-                    .into_owned(),
-            )) {
-                fs::remove_file(&file_path)?;
-                println!("Removed: {file_name}");
-            }
-        }
-    }
 
     shortcuts_file.set_len(0)?;
     shortcuts_file.seek(io::SeekFrom::Start(0))?;
@@ -497,7 +558,11 @@ fn json_synchronize(json_file: &mut File, shortcuts_file: &mut File, value: &Val
             &format!(
                 "alias {}='luajit {}'",
                 moniker.as_str().context(area_err!("Not a string"))?,
-                MONIKER_DIR.join(moniker.as_str().unwrap()).with_extension("lua").to_str().unwrap()
+                MONIKER_DIR
+                    .join(moniker.as_str().unwrap())
+                    .with_extension("lua")
+                    .to_str()
+                    .unwrap()
             )
             .into_bytes(),
         )?;
