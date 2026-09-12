@@ -14,6 +14,7 @@ use directories::{ProjectDirs, UserDirs};
 use mlua::Lua;
 use serde_json::{Map, Value};
 use std::borrow::Cow;
+use std::collections::HashSet;
 use std::env;
 use std::fs::{self, File};
 use std::io::{self, BufReader, BufWriter, Seek, Write};
@@ -31,8 +32,7 @@ static DATA_DIR: LazyLock<PathBuf> = LazyLock::new(|| {
 });
 static HOME_DIR: LazyLock<PathBuf> =
     LazyLock::new(|| UserDirs::new().unwrap().home_dir().to_path_buf());
-static MONIKER_DIR: LazyLock<PathBuf> =
-    LazyLock::new(|| DATA_DIR.join("monikers"));
+static MONIKER_DIR: LazyLock<PathBuf> = LazyLock::new(|| DATA_DIR.join("monikers"));
 
 fn main() -> Result<()> {
     let json_path = DATA_DIR.join("data.json");
@@ -111,7 +111,7 @@ fn main() -> Result<()> {
         eprintln!("Necessary keys not found in JSON, running setup...");
         setup(&mut rc_path, &mut json_val, &aliases_path)?;
         json_synchronize(&mut json_file, &mut shortcuts_file, &json_val)?;
-        return Ok(());
+        //return Ok(());
     }
 
     let settings_json = json_val
@@ -290,7 +290,7 @@ fn find_shell_rc() -> Result<String> {
 fn parse_args(
     args: CarapaceArgs,
     settings_json: &mut Map<String, Value>,
-    aliases_path: &Path
+    aliases_path: &Path,
 ) -> Result<()> {
     match args.command {
         ActionType::Alias(alias_command) => {
@@ -316,7 +316,11 @@ fn parse_args(
                     }
                     println!(
                         "Done, restart your terminal or run `source {}` for changes to take affect.",
-                        aliases_path.to_str().unwrap().shell_escape_chars()
+                        aliases_path
+                            .to_str()
+                            .unwrap()
+                            .shell_escape_chars()
+                            .path_to_relative()
                     );
                 }
                 AliasSubCommand::Del(remove_request) => {
@@ -328,8 +332,12 @@ fn parse_args(
                 }
                 AliasSubCommand::List => {
                     println!("Aliases:");
-                    for (alias, old_command) in aliases {
-                        println!("'{alias}' -> '{old_command}'");
+                    if aliases.is_empty() {
+                        println!("(None)");
+                    } else {
+                        for (alias, old_command) in aliases {
+                            println!("'{alias}' -> '{}'", old_command.as_str().unwrap());
+                        }
                     }
                 }
             }
@@ -340,10 +348,22 @@ fn parse_args(
                 .context(area_err!("`monikers` key not found, run `csc setup`"))?
                 .as_array_mut()
                 .context(area_err!("Not an array"))?;
-            // Remove monikers that are not a string
+            // Remove monikers that are not a string and duplicates
             monikers.retain(Value::is_string);
+            let mut seen = HashSet::new();
+            monikers.retain(|item| seen.insert(item.clone()));
             match moniker_command.subcommand {
                 MonikerSubCommand::Create(create_request) => {
+                    if create_request
+                        .moniker_path
+                        .extension()
+                        .unwrap_or_default()
+                        .to_str()
+                        .unwrap()
+                        != "lua"
+                    {
+                        bail!("You must input a .lua file.");
+                    }
                     println!(
                         "Adding moniker '{}' -> '{}'...",
                         create_request.moniker,
@@ -351,7 +371,22 @@ fn parse_args(
                     );
                     let lua_file_path = fs::canonicalize(&create_request.moniker_path)
                         .context(area_err!("File does not exist"))?;
-                    fs::hard_link(lua_file_path, MONIKER_DIR.join(format!("{}.lua", create_request.moniker))).context(area_err!("Failed to hard-link .lua file"))?;
+                    fs::hard_link(
+                        &lua_file_path,
+                        MONIKER_DIR.join(format!("{}.lua", create_request.moniker)),
+                    )
+                    .unwrap_or_else(|e| {
+                        eprintln!("ERROR: Hard link failed: '{e:?}', falling back to a copy");
+                        fs::remove_file(
+                            MONIKER_DIR.join(format!("{}.lua", create_request.moniker)),
+                        )
+                        .expect("Failed to remove file");
+                        fs::copy(
+                            lua_file_path,
+                            MONIKER_DIR.join(format!("{}.lua", create_request.moniker)),
+                        )
+                        .expect("Copy failed");
+                    });
                     if monikers.contains(&Value::String(create_request.moniker.clone())) {
                         let old_moniker = monikers
                             .iter()
@@ -359,13 +394,14 @@ fn parse_args(
                             .context(area_err!("Moniker does not exist"))?;
                         println!(
                             "Replacing old moniker '{} -> '{}'...",
-                            old_moniker,
-                            HOME_DIR
+                            monikers.get(old_moniker).unwrap(),
+                            MONIKER_DIR
                                 .join(
                                     monikers
                                         .get(old_moniker)
                                         .context(area_err!("Old moniker not found"))?
-                                        .to_string()
+                                        .as_str()
+                                        .context(area_err!("Not a string"))?
                                 )
                                 .to_str()
                                 .unwrap()
@@ -374,14 +410,22 @@ fn parse_args(
                     monikers.push(Value::String(create_request.moniker));
                     println!(
                         "Done, restart your terminal or run `source {}` for changes to take affect.",
-                        aliases_path.to_str().unwrap().shell_escape_chars()
+                        aliases_path
+                            .to_str()
+                            .unwrap()
+                            .shell_escape_chars()
+                            .path_to_relative()
                     );
                 }
                 MonikerSubCommand::Remove(remove_request) => {
                     if monikers.contains(&Value::String(remove_request.moniker.clone())) {
-                        monikers.retain(|other_moniker| {
-                            *other_moniker == remove_request.moniker
-                        });
+                        fs::remove_file(
+                            MONIKER_DIR
+                                .join(&remove_request.moniker)
+                                .with_extension("lua"),
+                        )
+                        .context(area_err!("File removal failed"))?;
+                        monikers.retain(|other_moniker| *other_moniker != remove_request.moniker);
                         println!(
                             "Deleted '{}' -> '{}'",
                             remove_request.moniker,
@@ -397,17 +441,22 @@ fn parse_args(
                 }
                 MonikerSubCommand::List => {
                     println!("Monikers:");
-                    for moniker in monikers {
-                        let moniker_name = moniker.to_string();
-                        println!(
-                            "'{}' -> '{}'",
-                            moniker_name,
-                            MONIKER_DIR
-                                .join(&moniker_name)
-                                .to_str()
-                                .unwrap()
-                                .path_to_relative()
-                        );
+                    if monikers.is_empty() {
+                        println!("(None)");
+                    } else {
+                        for moniker in monikers {
+                            let moniker_name =
+                                moniker.as_str().context(area_err!("Not a string"))?;
+                            println!(
+                                "'{}' -> '{}'",
+                                moniker_name,
+                                MONIKER_DIR
+                                    .join(format!("{moniker_name}.lua"))
+                                    .to_str()
+                                    .unwrap()
+                                    .path_to_relative()
+                            );
+                        }
                     }
                 }
                 MonikerSubCommand::Execute(_) => bail!(
@@ -416,6 +465,8 @@ fn parse_args(
                 ),
             }
         }
+
+        ActionType::Clean => todo!("Make clean command"),
 
         ActionType::Setup => bail!(
             "ERROR: `ActionType::Setup` was detected after \
@@ -448,7 +499,30 @@ fn json_synchronize(json_file: &mut File, shortcuts_file: &mut File, value: &Val
         .as_array()
         .context(area_err!("Not an array"))?;
 
-    
+    // TODO: Move this to `clean` subcommand
+    for entry in fs::read_dir(&*MONIKER_DIR)? {
+        let entry = entry?;
+        let file_path = entry.path();
+        if file_path.is_dir() {
+            fs::remove_dir(&file_path)?;
+            continue;
+        }
+        if file_path.is_file() {
+            let file_name = file_path.to_str().unwrap();
+            if !monikers.contains(&Value::String(
+                file_path
+                    .with_extension("")
+                    .file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned(),
+            )) {
+                fs::remove_file(&file_path)?;
+                println!("Removed: {file_name}");
+            }
+        }
+    }
+
     shortcuts_file.set_len(0)?;
     shortcuts_file.seek(io::SeekFrom::Start(0))?;
 
@@ -460,7 +534,7 @@ fn json_synchronize(json_file: &mut File, shortcuts_file: &mut File, value: &Val
         writer.write_all(
             &format!(
                 "alias {0}='csc moniker execute {0}'",
-                moniker.to_string(),
+                moniker.as_str().context(area_err!("Not a string"))?
             )
             .into_bytes(),
         )?;

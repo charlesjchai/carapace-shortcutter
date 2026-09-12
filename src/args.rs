@@ -20,6 +20,10 @@ pub enum ActionType {
 
     /// Run the setup process
     Setup,
+
+    /// TBA
+    /// Cleanup junk
+    Clean,
 }
 
 #[derive(Debug, Args)]
