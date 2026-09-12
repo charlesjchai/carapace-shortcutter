@@ -11,8 +11,7 @@ carapace-shortcutter is a command-line utility that allows you to make shortcuts
 To build from source, you will need the following dependencies:
 
 - `git`
-- `cargo`
-- `pkg-config`
+- `cargo` (preferably installed via `rustup`)
 - `luajit`
 - A Unix-based operating system (macOS, Linux, BSD), you must use WSL to run the program on Windows.
 
@@ -37,6 +36,8 @@ To list the current aliases, simply run `csc alias list`.
 #### Monikers
 
 Monikers are shortcuts to Lua scripts. You can add one by typing `csc moniker create <MONIKER> <MONIKER_PATH>`. You can remove or list them in a similar way to aliases, by typing `csc moniker remove <MONIKER>`, and `csc moniker list`.
+
+To execute a moniker, type its name, as if it were a regular command.
 
 ## License
 This project is licensed under the MIT License, see [LICENSE](LICENSE) for more details.

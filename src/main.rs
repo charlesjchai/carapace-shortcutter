@@ -11,7 +11,6 @@ mod args;
 use anyhow::{Context, Result, bail};
 use clap::Parser;
 use directories::{ProjectDirs, UserDirs};
-use mlua::Lua;
 use serde_json::{Map, Value};
 use std::borrow::Cow;
 use std::collections::HashSet;
@@ -22,7 +21,7 @@ use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
-use crate::args::{ActionType, AliasSubCommand, CarapaceArgs, MonikerCommand, MonikerSubCommand};
+use crate::args::{ActionType, AliasSubCommand, CarapaceArgs, MonikerSubCommand};
 
 static DATA_DIR: LazyLock<PathBuf> = LazyLock::new(|| {
     ProjectDirs::from("", "", "carapace-shortcutter")
@@ -65,40 +64,7 @@ fn main() -> Result<()> {
     let mut rc_path: PathBuf = PathBuf::new();
 
     let args = CarapaceArgs::parse();
-    if let ActionType::Moniker(MonikerCommand {
-        subcommand: MonikerSubCommand::Execute(execute_request),
-    }) = args.command
-    {
-        // Handle the `csc moniker execute` command
-        let moniker_name = execute_request.moniker;
-        let moniker_name_lua = format!("{moniker_name}.lua");
-
-        let moniker_code = fs::read_to_string(MONIKER_DIR.join(&moniker_name_lua)).context(
-            area_err!(format!("Moniker file `{moniker_name_lua}` not found")),
-        )?;
-
-        let lua = Lua::new();
-        let arg_table = lua.create_table().expect("Couldn't create table");
-        for (i, argument) in execute_request.args.into_iter().enumerate() {
-            // Lua arrays are 1-indexed
-            arg_table.set(i + 1, argument).unwrap();
-        }
-        lua.globals()
-            .set("arg", arg_table)
-            .expect("Couldn't insert table");
-        let status: Option<i32> = lua
-            .load(&moniker_code)
-            .set_name(&moniker_name_lua)
-            .eval()
-            .unwrap_or_else(|e| panic!("Moniker `{moniker_name_lua}` failed with error: {e:?}"));
-        if status.unwrap_or(0) != 0 {
-            bail!(
-                "Moniker {moniker_name_lua} returned non-zero return value: {}",
-                status.unwrap()
-            );
-        }
-        return Ok(());
-    } else if matches!(args.command, ActionType::Setup) {
+    if matches!(args.command, ActionType::Setup) {
         setup(&mut rc_path, &mut json_val, &aliases_path)?;
         json_synchronize(&mut json_file, &mut shortcuts_file, &json_val)?;
         return Ok(());
@@ -325,7 +291,7 @@ fn parse_args(
                 }
                 AliasSubCommand::Del(remove_request) => {
                     if let Some(old_alias) = aliases.remove(&remove_request.alias) {
-                        println!("Deleted '{}' -> '{}'", remove_request.alias, old_alias); // Print the trigger and the aliasee
+                        println!("Removed '{}' -> '{}'", remove_request.alias, old_alias); // Print the trigger and the aliasee
                     } else {
                         eprintln!("ERROR: alias '{}' never existed.", remove_request.alias);
                     }
@@ -459,10 +425,6 @@ fn parse_args(
                         }
                     }
                 }
-                MonikerSubCommand::Execute(_) => bail!(
-                    "ERROR: `MonikerSubCommand::Execute` was detected after \
-                parsing, this should never happen"
-                ),
             }
         }
 
@@ -533,8 +495,9 @@ fn json_synchronize(json_file: &mut File, shortcuts_file: &mut File, value: &Val
     for moniker in monikers {
         writer.write_all(
             &format!(
-                "alias {0}='csc moniker execute {0}'",
-                moniker.as_str().context(area_err!("Not a string"))?
+                "alias {}='luajit {}'",
+                moniker.as_str().context(area_err!("Not a string"))?,
+                MONIKER_DIR.join(moniker.as_str().unwrap()).with_extension("lua").to_str().unwrap()
             )
             .into_bytes(),
         )?;

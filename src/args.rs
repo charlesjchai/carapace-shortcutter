@@ -58,9 +58,6 @@ pub enum MonikerSubCommand {
 
     /// List monikers
     List,
-
-    /// Run a moniker, intended for automated use (ex. `alias ls='csc moniker execute ls-fancy'`).
-    Execute(ExecuteMoniker),
 }
 
 /// Running `trigger` runs `aliasee`
