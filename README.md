@@ -15,13 +15,7 @@ To build from source, you will need the following dependencies:
 - `luajit`
 - A Unix-based operating system (macOS, Linux, BSD), you must use WSL to run the program on Windows.
 
-Then, run the following commands:
-
-```
-git clone https://github.com/charlesjchai/carapace-shortcutter
-cd carapace-shortcutter
-cargo install --path .
-```
+Then, run `cargo install --git https://github.com/charlesjchai/carapace-shortcutter` to install it.
 
 ### Using it
 
