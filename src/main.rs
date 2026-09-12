@@ -23,11 +23,15 @@ use std::sync::LazyLock;
 
 use crate::args::{ActionType, AliasSubCommand, CarapaceArgs, MonikerSubCommand};
 
-#[cfg(all(not(unix), not(windows)))]
-compile_error!("Your operating system is not a Unix-based operating system, only Unix-based operating systems are supported.");
-
-#[cfg(windows)]
-compile_error!("MICROSLOP LOVER AHHHHHHHHHH");
+static DATA_DIR: LazyLock<PathBuf> = LazyLock::new(|| {
+    ProjectDirs::from("", "", "carapace-shortcutter")
+        .expect("Could not determine application data directory")
+        .data_dir()
+        .to_owned()
+});
+static HOME_DIR: LazyLock<PathBuf> =
+    LazyLock::new(|| UserDirs::new().unwrap().home_dir().to_path_buf());
+static MONIKER_DIR: LazyLock<PathBuf> = LazyLock::new(|| DATA_DIR.join("monikers"));
 
 fn main() -> Result<()> {
     let json_path = DATA_DIR.join("data.json");
