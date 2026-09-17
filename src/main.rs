@@ -37,14 +37,25 @@ fn main() -> Result<()> {
     let json_path = DATA_DIR.join("data.json");
     let aliases_path = DATA_DIR.join("shortcuts");
     // Create data_dir and moniker_dir in one fell swoop
-    fs::create_dir_all(&*MONIKER_DIR).context(area_err!("Could not create directory(s)"))?;
+    if let Err(e) = fs::create_dir_all(&*MONIKER_DIR) {
+        match e.kind() {
+            io::ErrorKind::AlreadyExists | io::ErrorKind::NotADirectory => {
+                eprint!("A file already exists there. Attempting to remove it... ");
+                trash::delete(&*DATA_DIR).context(area_err!("Failed to delete file"))?;
+                eprintln!("done");
+                println!("Please run the command again.");
+                return Ok(());
+            }
+            _ => return Err(e.into()),
+        }
+    }
 
     let mut json_file = File::options()
         .read(true)
         .write(true)
         .create(true)
         .open(json_path.to_str().unwrap())
-        .context(area_err!("Could not open settings.json"))?;
+        .context(area_err!("Could not open data.json"))?;
     let mut shortcuts_file = File::options()
         .read(true)
         .write(true)
@@ -54,7 +65,7 @@ fn main() -> Result<()> {
         .context(area_err!("Could not open `aliases` file"))?;
     let reader = BufReader::new(&json_file);
 
-    // Either creates a mutable copy of settings.json or initializes an empty one
+    // Either creates a mutable copy of data.json or initializes an empty one
     let mut json_val = if json_file.metadata()?.len() == 0 {
         Value::Object(serde_json::Map::new())
     } else {
@@ -80,11 +91,11 @@ fn main() -> Result<()> {
         //return Ok(());
     }
 
-    let settings_json = json_val
+    let data_json = json_val
         .as_object_mut()
         .context(area_err!("Not an object"))?;
 
-    parse_args(args, settings_json, &aliases_path)?;
+    parse_args(args, data_json, &aliases_path)?;
 
     json_synchronize(&mut json_file, &mut shortcuts_file, &json_val)?;
     Ok(())
@@ -166,19 +177,19 @@ fn setup(rc_path: &mut PathBuf, json_val: &mut Value, aliases_path: &Path) -> Re
     }
 
     rc_path.push(HOME_DIR.join(stdin_buf.trim()));
-    let settings_json = json_val
+    let data_json = json_val
         .as_object_mut()
         .context(area_err!("Not an object"))?;
 
-    // Initialize settings.json
-    settings_json.insert(
+    // Initialize data.json
+    data_json.insert(
         "rc_file".to_string(),
         Value::String(rc_path.to_str().unwrap().path_to_relative().into_owned()),
     );
-    settings_json
+    data_json
         .entry("aliases".to_string())
         .or_insert(Value::Object(Map::new()));
-    settings_json
+    data_json
         .entry("monikers".to_string())
         .or_insert(Value::Array(Vec::new()));
 
@@ -223,7 +234,7 @@ fn find_shell_rc() -> Result<String> {
     } else if current_shell.contains("fish") {
         ".config/fish/config.fish".clone_into(&mut relative_rc_path);
     } else if current_shell.contains("/zsh") {
-        const ZSH_RC_PRIORITY: [&str; 3] = [".zshrc", ".config/.zshrc", ".config/zsh/.zshrc"];
+        const ZSH_RC_PRIORITY: [&str; 4] = [".zshrc", ".zsh/.zshrc", ".config/.zshrc", ".config/zsh/.zshrc"];
 
         // Loop through the priority list, stopping once an existing file has been found
         for zsh_relative_rc_path in ZSH_RC_PRIORITY {
@@ -250,12 +261,12 @@ fn find_shell_rc() -> Result<String> {
 /// Parses the args given to the function
 fn parse_args(
     args: CarapaceArgs,
-    settings_json: &mut Map<String, Value>,
+    data_json: &mut Map<String, Value>,
     aliases_path: &Path,
 ) -> Result<()> {
     match args.command {
         ActionType::Alias(alias_command) => {
-            let aliases = settings_json
+            let aliases = data_json
                 .get_mut("aliases")
                 .context(area_err!("`aliases` key not found, run `csc setup`"))?
                 .as_object_mut()
@@ -304,7 +315,7 @@ fn parse_args(
             }
         }
         ActionType::Moniker(moniker_command) => {
-            let monikers = settings_json
+            let monikers = data_json
                 .get_mut("monikers")
                 .context(area_err!("`monikers` key not found, run `csc setup`"))?
                 .as_array_mut()
@@ -414,7 +425,7 @@ fn parse_args(
         }
 
         ActionType::Clean(flags) => {
-            let monikers = settings_json
+            let monikers = data_json
                 .get_mut("monikers")
                 .context(area_err!("`monikers` key not found, run `csc setup`"))?
                 .as_array_mut()

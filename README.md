@@ -11,7 +11,8 @@ carapace-shortcutter is a command-line utility that allows you to make shortcuts
 To build from source, you will need the following dependencies:
 
 - `git`
-- `cargo` (preferably installed via `rustup`)
+- `cargo` (preferably installed via `rustup`
+- A C compiler (like `gcc`)
 - `luajit`
 - A Unix-based operating system (macOS, Linux, BSD), you must use WSL to run the program on Windows.
 
