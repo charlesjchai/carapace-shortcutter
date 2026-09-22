@@ -336,7 +336,6 @@ fn parse_args(
                     let lua_file_path = fs::canonicalize(&create_request.moniker_path)
                         .context(area_err!("File does not exist"))?;
                     let lua_dest_path = MONIKER_DIR.join(format!("{}.lua", create_request.moniker));
-                    dbg!(&lua_file_path);
                     if fs::exists(&lua_dest_path).context(area_err!("Could not overwrite file"))? {
                         let old_moniker = monikers
                             .iter()
