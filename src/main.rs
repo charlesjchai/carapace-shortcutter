@@ -566,7 +566,7 @@ fn json_synchronize(json_file: &mut File, shortcuts_file: &mut File, value: &Val
     for moniker in monikers {
         writer.write_all(
             &format!(
-                "alias {}='luajit {}'",
+                "alias {}=luajit '{}'",
                 moniker.as_str().context(area_err!("Not a string"))?,
                 MONIKER_DIR
                     .join(moniker.as_str().unwrap())

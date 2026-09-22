@@ -1,6 +1,6 @@
 [package]
 name = "carapace-shortcutter"
-version = "0.2.2"
+version = "0.2.3"
 edition = "2024"
 description = "A command-line tool that makes aliases of shell commands and lua scripts"
 readme = "README.md"
