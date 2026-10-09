@@ -34,7 +34,8 @@ pub struct AliasCommand {
 pub struct MonikerCommand {
     #[command(subcommand)]
     pub subcommand: MonikerSubCommand,
-}#[derive(Debug, Args)]
+}
+#[derive(Debug, Args)]
 pub struct CleanFlags {
     #[arg(short = 'f', long)]
     /// Remove the files instead of moving them to the trash
@@ -93,21 +94,14 @@ pub struct CreateMoniker {
 
 #[derive(Debug, Args)]
 pub struct RemoveAlias {
-    /// The alias to be removed
-    pub alias: String,
+    #[arg(num_args = 1.., required = true)]
+    /// The aliases to be removed
+    pub aliases: Vec<String>,
 }
 
 #[derive(Debug, Args)]
 pub struct RemoveMoniker {
-    /// The moniker to be removed
-    pub moniker: String,
-}
-
-#[derive(Debug, Args)]
-pub struct ExecuteMoniker {
-    /// The moniker to be executed (name WITHOUT .lua file extention)
-    pub moniker: String,
-
-    #[arg(trailing_var_arg = true)]
-    pub args: Vec<String>,
+    #[arg(num_args = 1.., required = true)]
+    /// The moniker(s) to be removed
+    pub monikers: Vec<String>,
 }

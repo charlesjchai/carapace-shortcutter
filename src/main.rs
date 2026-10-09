@@ -234,7 +234,12 @@ fn find_shell_rc() -> Result<String> {
     } else if current_shell.contains("fish") {
         ".config/fish/config.fish".clone_into(&mut relative_rc_path);
     } else if current_shell.contains("/zsh") {
-        const ZSH_RC_PRIORITY: [&str; 4] = [".zshrc", ".zsh/.zshrc", ".config/.zshrc", ".config/zsh/.zshrc"];
+        const ZSH_RC_PRIORITY: [&str; 4] = [
+            ".zshrc",
+            ".zsh/.zshrc",
+            ".config/.zshrc",
+            ".config/zsh/.zshrc",
+        ];
 
         // Loop through the priority list, stopping once an existing file has been found
         for zsh_relative_rc_path in ZSH_RC_PRIORITY {
@@ -296,10 +301,21 @@ fn parse_args(
                     );
                 }
                 AliasSubCommand::Del(remove_request) => {
-                    if let Some(old_alias) = aliases.remove(&remove_request.alias) {
-                        println!("Removed '{}' -> '{}'", remove_request.alias, old_alias); // Print the trigger and the aliasee
-                    } else {
-                        eprintln!("ERROR: alias '{}' never existed.", remove_request.alias);
+                    let mut departed = false;
+                    for fading_alias in remove_request.aliases {
+                        if let Some(old_alias) = aliases.remove(&fading_alias) {
+                            departed = true;
+                            println!(
+                                "Removed '{}' -> '{}'",
+                                fading_alias,
+                                old_alias.as_str().unwrap()
+                            ); // Print the trigger and the aliasee
+                        } else {
+                            eprintln!("ERROR: alias '{}' doesn't exist.", fading_alias);
+                        }
+                    }
+                    if departed {
+                        println!("Note: you may have to `unalias` the aliases you've removed");
                     }
                 }
                 AliasSubCommand::List => {
@@ -343,7 +359,7 @@ fn parse_args(
                             .context(area_err!("Moniker does not exist"))?;
                         println!(
                             "Replacing old moniker '{} -> '{}'...",
-                            monikers.get(old_moniker).unwrap(),
+                            monikers.get(old_moniker).unwrap().as_str().unwrap(),
                             MONIKER_DIR
                                 .join(
                                     monikers
@@ -375,25 +391,32 @@ fn parse_args(
                     );
                 }
                 MonikerSubCommand::Remove(remove_request) => {
-                    if monikers.contains(&Value::String(remove_request.moniker.clone())) {
-                        fs::remove_file(
-                            MONIKER_DIR
-                                .join(&remove_request.moniker)
-                                .with_extension("lua"),
-                        )
-                        .context(area_err!("File removal failed"))?;
-                        monikers.retain(|other_moniker| *other_moniker != remove_request.moniker);
-                        println!(
-                            "Deleted '{}' -> '{}'",
-                            remove_request.moniker,
-                            MONIKER_DIR
-                                .join(&remove_request.moniker)
-                                .to_str()
-                                .unwrap()
-                                .path_to_relative()
-                        );
-                    } else {
-                        eprintln!("ERROR: moniker '{}' never existed.", remove_request.moniker);
+                    let mut departed = false;
+                    for fading_moniker in remove_request.monikers {
+                        if monikers.contains(&Value::String(fading_moniker.clone())) {
+                            monikers.retain(|other_moniker| *other_moniker != fading_moniker);
+                            if let Err(err) = fs::remove_file(
+                                MONIKER_DIR.join(&fading_moniker).with_extension("lua"),
+                            ) {
+                                eprintln!("ERROR: Couldn't remove file: {err}\nProceeding...");
+                                continue;
+                            }
+                            departed = true;
+                            println!(
+                                "Removed '{}' -> '{}'",
+                                fading_moniker,
+                                MONIKER_DIR
+                                    .join(&fading_moniker)
+                                    .to_str()
+                                    .unwrap()
+                                    .path_to_relative()
+                            );
+                        } else {
+                            eprintln!("ERROR: moniker '{}' doesn't exist.", fading_moniker);
+                        }
+                    }
+                    if departed {
+                        println!("Note: you may have to `unalias` the monikers you've removed");
                     }
                 }
                 MonikerSubCommand::List => {
@@ -460,21 +483,21 @@ fn clean(monikers: &mut Vec<Value>, flags: CleanFlags) -> Result<()> {
             flagged_files.insert(file_path, FileRemovalReason::IsDirectory);
             continue;
         }
-        if file_path.is_file() {
-            if !monikers.contains(&Value::String(
+        if file_path.is_file()
+            && !monikers.contains(&Value::String(
                 file_path
                     .with_extension("")
                     .file_name()
                     .unwrap()
                     .to_string_lossy()
                     .into_owned(),
-            )) {
-                if file_path.extension().unwrap_or_default() == "lua" {
-                    // Flag files that are in the directory but not in the JSON
-                    flagged_files.insert(file_path, FileRemovalReason::NoMonikerAttached);
-                } else {
-                    flagged_files.insert(file_path, FileRemovalReason::UnrelatedFile);
-                }
+            ))
+        {
+            if file_path.extension().unwrap_or_default() == "lua" {
+                // Flag files that are in the directory but not in the JSON
+                flagged_files.insert(file_path, FileRemovalReason::NoMonikerAttached);
+            } else {
+                flagged_files.insert(file_path, FileRemovalReason::UnrelatedFile);
             }
         }
     }
@@ -511,7 +534,11 @@ fn clean(monikers: &mut Vec<Value>, flags: CleanFlags) -> Result<()> {
     }
     print!(
         "{} {} {}... ",
-        if !flags.remove { "Trashing "} else { "Removing" },
+        if !flags.remove {
+            "Trashing "
+        } else {
+            "Removing"
+        },
         flagged_files.len(),
         if flagged_files.len() == 1 {
             "file"
@@ -520,10 +547,10 @@ fn clean(monikers: &mut Vec<Value>, flags: CleanFlags) -> Result<()> {
         }
     );
     if !flags.remove {
-        trash::delete_all(flagged_files.keys().into_iter())
+        trash::delete_all(flagged_files.keys())
             .context(area_err!("Trash failed, check your permissions"))?;
     } else {
-        for path in flagged_files.keys().into_iter() {
+        for path in flagged_files.keys() {
             fs::remove_file(path).context(area_err!("Remove failed, check your permissions"))?;
         }
     }
@@ -566,7 +593,7 @@ fn json_synchronize(json_file: &mut File, shortcuts_file: &mut File, value: &Val
     for moniker in monikers {
         writer.write_all(
             &format!(
-                "alias {}=luajit '{}'",
+                "alias {}='luajit \"{}\"'\n",
                 moniker.as_str().context(area_err!("Not a string"))?,
                 MONIKER_DIR
                     .join(moniker.as_str().unwrap())
