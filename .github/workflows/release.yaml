@@ -17,11 +17,11 @@ jobs:
         include:
           - name: macOS x86-64
             target: x86_64-apple-darwin
-            runner: macos-14
+            runner: macos-latest
 
           - name: macOS ARM64
             target: aarch64-apple-darwin
-            runner: macos-14
+            runner: macos-latest
 
           - name: Linux x86-64 glibc
             target: x86_64-unknown-linux-gnu

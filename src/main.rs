@@ -375,10 +375,11 @@ fn parse_args(
                         fs::remove_file(&lua_dest_path)
                             .context(area_err!("Could not overwrite file"))?;
                     }
-                    fs::hard_link(&lua_file_path, &lua_dest_path).unwrap_or_else(|e| {
-                        eprintln!("ERROR: Hard link failed: '{e:?}', falling back to a copy");
-                        fs::copy(lua_file_path, lua_dest_path).expect("Copy failed");
-                    });
+                    if create_request.hard_link {
+                    fs::hard_link(&lua_file_path, &lua_dest_path).context(area_err!("ERROR: Hard link failed"))?;
+                    } else {
+                        fs::copy(lua_file_path, lua_dest_path).context(area_err!("ERROR: Copy failed"))?;
+                    }
 
                     monikers.push(Value::String(create_request.moniker));
                     println!(
