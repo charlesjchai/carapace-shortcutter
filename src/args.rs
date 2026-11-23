@@ -44,8 +44,8 @@ pub struct CleanFlags {
 
 #[derive(Debug, Subcommand)]
 pub enum AliasSubCommand {
-    /// Create an alias
-    Add(CreateAlias),
+    /// Add an alias
+    Add(AddAlias),
 
     /// Delete an alias
     Del(RemoveAlias),
@@ -67,11 +67,11 @@ pub enum MonikerSubCommand {
 
 /// Running `trigger` runs `aliasee`
 /// ```bash
-/// csc alias create ls "ls --color=auto"
+/// csc alias add ls "ls --color=auto"
 /// ls # Calls `ls --color=auto`
 /// ```
 #[derive(Debug, Args)]
-pub struct CreateAlias {
+pub struct AddAlias {
     /// The command to activate the alias
     pub alias: String,
 

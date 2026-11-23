@@ -376,9 +376,11 @@ fn parse_args(
                             .context(area_err!("Could not overwrite file"))?;
                     }
                     if create_request.hard_link {
-                    fs::hard_link(&lua_file_path, &lua_dest_path).context(area_err!("ERROR: Hard link failed"))?;
+                        fs::hard_link(&lua_file_path, &lua_dest_path)
+                            .context(area_err!("ERROR: Hard link failed"))?;
                     } else {
-                        fs::copy(lua_file_path, lua_dest_path).context(area_err!("ERROR: Copy failed"))?;
+                        fs::copy(lua_file_path, lua_dest_path)
+                            .context(area_err!("ERROR: Copy failed"))?;
                     }
 
                     monikers.push(Value::String(create_request.moniker));
