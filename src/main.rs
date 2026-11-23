@@ -467,7 +467,6 @@ fn parse_args(
 }
 
 fn clean(monikers: &mut Vec<Value>, flags: CleanFlags) -> Result<()> {
-    #[derive(Debug)]
     enum FileRemovalReason {
         NoMonikerAttached,
         UnrelatedFile,
@@ -535,10 +534,10 @@ fn clean(monikers: &mut Vec<Value>, flags: CleanFlags) -> Result<()> {
         println!("Exiting...");
         return Ok(());
     }
-    print!(
+    println!(
         "{} {} {}... ",
         if !flags.remove {
-            "Trashing "
+            "Trashing"
         } else {
             "Removing"
         },
@@ -557,7 +556,7 @@ fn clean(monikers: &mut Vec<Value>, flags: CleanFlags) -> Result<()> {
             fs::remove_file(path).context(area_err!("Remove failed, check your permissions"))?;
         }
     }
-    println!("done");
+    println!("Done!");
     Ok(())
 }
 
