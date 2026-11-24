@@ -92,7 +92,7 @@ pub struct CreateMoniker {
     pub moniker_path: PathBuf,
 
     /// Hard link the .lua file instead of copying
-    #[arg(short = 'l', long)]
+    #[arg(short = 'l', long = "link")]
     pub hard_link: bool,
 }
 

@@ -12,6 +12,7 @@ use anyhow::{Context, Result, bail};
 use clap::Parser;
 use directories::{ProjectDirs, UserDirs};
 use serde_json::{Map, Value};
+use colored::Colorize;
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::env;
@@ -278,6 +279,7 @@ fn parse_args(
                 .context(area_err!("Not an object"))?;
             // Remove aliases that are not a string
             aliases.retain(|_k, value| value.is_string());
+
             match alias_command.subcommand {
                 AliasSubCommand::Add(create_request) => {
                     println!(
@@ -302,8 +304,8 @@ fn parse_args(
                 }
                 AliasSubCommand::Del(remove_request) => {
                     let mut departed = false;
-                    for fading_alias in remove_request.aliases {
-                        if let Some(old_alias) = aliases.remove(&fading_alias) {
+                    for fading_alias in &remove_request.aliases {
+                        if let Some(old_alias) = aliases.remove(fading_alias) {
                             departed = true;
                             println!(
                                 "Removed '{}' -> '{}'",
@@ -315,7 +317,10 @@ fn parse_args(
                         }
                     }
                     if departed {
-                        println!("Note: you may have to `unalias` the aliases you've removed");
+                        println!("{}", "Make sure to unalias the removed aliases:".bold());
+                        for removed_alias in remove_request.aliases {
+                            println!("unalias '{}'", removed_alias)
+                        }
                     }
                 }
                 AliasSubCommand::List => {
@@ -395,11 +400,11 @@ fn parse_args(
                 }
                 MonikerSubCommand::Remove(remove_request) => {
                     let mut departed = false;
-                    for fading_moniker in remove_request.monikers {
+                    for fading_moniker in &remove_request.monikers {
                         if monikers.contains(&Value::String(fading_moniker.clone())) {
-                            monikers.retain(|other_moniker| *other_moniker != fading_moniker);
+                            monikers.retain(|other_moniker| *other_moniker != *fading_moniker);
                             if let Err(err) = fs::remove_file(
-                                MONIKER_DIR.join(&fading_moniker).with_extension("lua"),
+                                MONIKER_DIR.join(fading_moniker).with_extension("lua"),
                             ) {
                                 eprintln!("ERROR: Couldn't remove file: {err}\nProceeding...");
                                 continue;
@@ -409,7 +414,7 @@ fn parse_args(
                                 "Removed '{}' -> '{}'",
                                 fading_moniker,
                                 MONIKER_DIR
-                                    .join(&fading_moniker)
+                                    .join(fading_moniker)
                                     .to_str()
                                     .unwrap()
                                     .path_to_relative()
@@ -419,7 +424,10 @@ fn parse_args(
                         }
                     }
                     if departed {
-                        println!("Note: you may have to `unalias` the monikers you've removed");
+                        println!("{}", "Make sure to unalias the removed monikers:".bold());
+                        for removed_moniker in remove_request.monikers {
+                            println!("unalias '{}'", removed_moniker)
+                        }
                     }
                 }
                 MonikerSubCommand::List => {
